@@ -8,7 +8,7 @@ public final class Constants {
             "https://api.openai.com/v1/embeddings";
 
     public static final String OPENAI_CHAT_COMPLETIONS_ENDPOINT =
-            "https://api.openai.com/v1/chat/completions";
+            "https://api.openai.com/v1";
 
     public static final String OPENAI_RESPONSES_ENDPOINT =
             "https://api.openai.com/v1/responses";
