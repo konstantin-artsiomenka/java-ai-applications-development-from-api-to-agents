@@ -1,10 +1,11 @@
 package t1.llm.api.gemini;
 
 import com.google.genai.Client;
+import com.google.genai.ResponseStream;
 import com.google.genai.types.Content;
 import com.google.genai.types.GenerateContentConfig;
+import com.google.genai.types.GenerateContentResponse;
 import com.google.genai.types.Part;
-import commons.exceptions.TaskNotImplementedException;
 import commons.model.Message;
 import commons.model.Role;
 import t1.llm.api.AiClient;
@@ -25,63 +26,67 @@ import java.util.List;
  */
 public class GeminiAiClient extends AiClient {
 
-    private Client client;
+  private final Client client;
 
-    public GeminiAiClient(String endpoint, String modelName, String apiKey, String systemPrompt) {
-        super(endpoint, modelName, apiKey, systemPrompt);
-        //TODO:
-        // https://github.com/googleapis/java-genai
-        // - Build a Client using Client.builder(), set apiKey, and call build()
-        // - Assign the result to this.client
-        throw new TaskNotImplementedException();
-    }
+  public GeminiAiClient(String endpoint, String modelName, String apiKey, String systemPrompt) {
+    super(endpoint, modelName, apiKey, systemPrompt);
+    this.client = Client.builder()
+      .apiKey(apiKey)
+      .build();
+  }
 
-    @Override
-    public Message response(List<Message> messages) {
-        //TODO:
-        // - Build GenerateContentConfig using buildConfig()
-        // - Build the contents list using buildContents(messages)
-        // - Call client.models.generateContent(modelName, contents, config)
-        // - Extract text from response via resp.text(); treat null as empty string
-        // - Print content to stdout
-        // - Return new Message(Role.ASSISTANT, content)
-        throw new TaskNotImplementedException();
-    }
+  @Override
+  public Message response(List<Message> messages) {
+    GenerateContentConfig config = buildConfig();
+    List<Content> contents = buildContents(messages);
+    GenerateContentResponse resp = client.models.generateContent(modelName, contents, config);
+    String content = resp.text() != null ? resp.text() : "";
+    System.out.println(content);
+    return new Message(Role.ASSISTANT, content);
+  }
 
-    @Override
-    public Message streamResponse(List<Message> messages) {
-        //TODO:
-        // - Build GenerateContentConfig using buildConfig()
-        // - Build the contents list using buildContents(messages)
-        // - Open a streaming call via client.models.generateContentStream(modelName, contents, config) (try-with-resources)
-        // - For each chunk, extract chunk.text(); skip null or empty values
-        // - Print each non-empty text to stdout; accumulate in a StringBuilder
-        // - Print a newline after the stream ends
-        // - Return new Message(Role.ASSISTANT, accumulated content)
-        throw new TaskNotImplementedException();
+  @Override
+  public Message streamResponse(List<Message> messages) {
+    GenerateContentConfig config = buildConfig();
+    List<Content> contents = buildContents(messages);
+    StringBuilder sb = new StringBuilder();
+    try (ResponseStream<GenerateContentResponse> stream = client.models.generateContentStream(modelName, contents,
+      config)) {
+      for (GenerateContentResponse chunk : stream) {
+        String text = chunk.text();
+        if (text != null && !text.isEmpty()) {
+          System.out.print(text);
+          sb.append(text);
+        }
+      }
     }
+    System.out.println();
+    return new Message(Role.ASSISTANT, sb.toString());
+  }
 
-    private GenerateContentConfig buildConfig() {
-        //TODO:
-        // - Build a GenerateContentConfig with systemInstruction set to a Content containing Part.fromText(systemPrompt)
-        // - Set maxOutputTokens
-        // - Build and return the config
-        throw new TaskNotImplementedException();
-    }
+  private GenerateContentConfig buildConfig() {
+    Content systemInstruction = Content.builder()
+      .parts(Part.fromText(systemPrompt))
+      .build();
+    return GenerateContentConfig.builder()
+      .systemInstruction(systemInstruction)
+      .maxOutputTokens(1024)
+      .build();
+  }
 
-    private List<Content> buildContents(List<Message> messages) {
-        //TODO:
-        // - For each Message, build a Content with:
-        //   - role: toGeminiRole(m.role())
-        //   - parts: a single Part.fromText(m.content())
-        // - Collect all Content objects into a List and return
-        throw new TaskNotImplementedException();
+  private List<Content> buildContents(List<Message> messages) {
+    List<Content> contents = new ArrayList<>();
+    for (Message m : messages) {
+      Content content = Content.builder()
+        .role(toGeminiRole(m.role()))
+        .parts(Part.fromText(m.content()))
+        .build();
+      contents.add(content);
     }
+    return contents;
+  }
 
-    private String toGeminiRole(Role role) {
-        //TODO:
-        // - Return "model" if the role is Role.ASSISTANT (Gemini uses "model" not "assistant")
-        // - Otherwise return role.getValue()
-        throw new TaskNotImplementedException();
-    }
+  private String toGeminiRole(Role role) {
+    return role == Role.ASSISTANT ? "model" : role.getValue();
+  }
 }
