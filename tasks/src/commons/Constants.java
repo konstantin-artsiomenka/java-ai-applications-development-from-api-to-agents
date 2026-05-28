@@ -7,11 +7,8 @@ public final class Constants {
     public static final String OPENAI_EMBEDDINGS_ENDPOINT =
             "https://api.openai.com/v1/embeddings";
 
-    public static final String OPENAI_CHAT_COMPLETIONS_ENDPOINT =
+    public static final String OPENAI_HOST =
             "https://api.openai.com/v1";
-
-    public static final String OPENAI_RESPONSES_ENDPOINT =
-            "https://api.openai.com/v1/responses";
 
     public static final String OPENAI_IMAGES_GENERATIONS_ENDPOINT =
             "https://api.openai.com/v1/images/generations";
@@ -37,7 +34,7 @@ public final class Constants {
     public static final String DEFAULT_SYSTEM_PROMPT =
             "You are an assistant who answers concisely and informatively.";
 
-    public static final String CLAUDE_SONNET_4_5 = "claude-sonnet-4-5";
+    public static final String CLAUDE_SONNET_4_6 = "claude-sonnet-4-6";
     public static final String GEMINI_3_FLASH_PREVIEW = "gemini-3-flash-preview";
     public static final String GPT_5_4 = "gpt-5.4";
     public static final String GPT_4_1_NANO = "gpt-4.1-nano";

@@ -13,7 +13,7 @@ public class OpenAiChatCompletionsClient extends AIClient {
 
     public OpenAiChatCompletionsClient(String modelName) {
         super(
-                Constants.OPENAI_CHAT_COMPLETIONS_ENDPOINT,
+                Constants.OPENAI_HOST,
                 modelName,
                 "Bearer " + Constants.OPENAI_API_KEY,
                 "Authorization"

@@ -20,59 +20,59 @@ import java.util.List;
  */
 public class OpenAiChatCompletionsClient extends BaseOpenAiClient {
 
-    private OpenAIClient client;
+  private final OpenAIClient client;
 
-    public OpenAiChatCompletionsClient(String endpoint, String modelName, String apiKey, String systemPrompt) {
-        super(endpoint, modelName, apiKey, systemPrompt);
-        // this.apiKey already has "Bearer " prefix from BaseOpenAiClient; strip it for the SDK
-        String rawKey = this.apiKey.startsWith("Bearer ") ? this.apiKey.substring("Bearer ".length()) : this.apiKey;
-        this.client = OpenAIOkHttpClient.builder()
-                .baseUrl(endpoint)
-                .apiKey(rawKey)
-                .build();
-    }
+  public OpenAiChatCompletionsClient(String url, String modelName, String apiKey, String systemPrompt) {
+    super(url, modelName, apiKey, systemPrompt);
+    // this.apiKey already has "Bearer " prefix from BaseOpenAiClient; strip it for the SDK
+    String rawKey = this.apiKey.startsWith("Bearer ") ? this.apiKey.substring("Bearer ".length()) : this.apiKey;
+    this.client = OpenAIOkHttpClient.builder()
+      .baseUrl(url)
+      .apiKey(rawKey)
+      .build();
+  }
 
-    @Override
-    public Message response(List<Message> messages) {
-        ChatCompletionCreateParams params = buildParams(messages);
-        var completion = client.chat().completions().create(params);
-        String content = completion.choices().get(0).message().content()
-                .orElseThrow(() -> new RuntimeException("No content in response"));
-        System.out.println(content);
-        return new Message(Role.ASSISTANT, content);
-    }
+  @Override
+  public Message response(List<Message> messages) {
+    ChatCompletionCreateParams params = buildParams(messages);
+    var completion = client.chat().completions().create(params);
+    String content = completion.choices().getFirst().message().content()
+      .orElseThrow(() -> new RuntimeException("No content in response"));
+    System.out.println(content);
+    return new Message(Role.ASSISTANT, content);
+  }
 
-    @Override
-    public Message streamResponse(List<Message> messages) {
-        ChatCompletionCreateParams params = buildParams(messages);
-        StringBuilder sb = new StringBuilder();
-        try (StreamResponse<ChatCompletionChunk> stream = client.chat().completions().createStreaming(params)) {
-            stream.stream().forEach(chunk ->
-                chunk.choices().forEach(choice ->
-                    choice.delta().content().ifPresent(token -> {
-                        System.out.print(token);
-                        sb.append(token);
-                    })
-                )
-            );
-        }
-        System.out.println();
-        return new Message(Role.ASSISTANT, sb.toString());
+  @Override
+  public Message streamResponse(List<Message> messages) {
+    ChatCompletionCreateParams params = buildParams(messages);
+    StringBuilder sb = new StringBuilder();
+    try (StreamResponse<ChatCompletionChunk> stream = client.chat().completions().createStreaming(params)) {
+      stream.stream().forEach(chunk ->
+        chunk.choices().forEach(choice ->
+          choice.delta().content().ifPresent(token -> {
+            System.out.print(token);
+            sb.append(token);
+          })
+        )
+      );
     }
+    System.out.println();
+    return new Message(Role.ASSISTANT, sb.toString());
+  }
 
-    private ChatCompletionCreateParams buildParams(List<Message> messages) {
-        ChatCompletionCreateParams.Builder builder = ChatCompletionCreateParams.builder()
-                .model(modelName)
-                .addSystemMessage(systemPrompt);
-        for (Message msg : messages) {
-            if (msg.role() == Role.USER) {
-                builder.addUserMessage(msg.content());
-            } else if (msg.role() == Role.ASSISTANT) {
-                builder.addMessage(ChatCompletionAssistantMessageParam.builder()
-                        .content(msg.content())
-                        .build());
-            }
-        }
-        return builder.build();
+  private ChatCompletionCreateParams buildParams(List<Message> messages) {
+    ChatCompletionCreateParams.Builder builder = ChatCompletionCreateParams.builder()
+      .model(modelName)
+      .addSystemMessage(systemPrompt);
+    for (Message msg : messages) {
+      if (msg.role() == Role.USER) {
+        builder.addUserMessage(msg.content());
+      } else if (msg.role() == Role.ASSISTANT) {
+        builder.addMessage(ChatCompletionAssistantMessageParam.builder()
+          .content(msg.content())
+          .build());
+      }
     }
+    return builder.build();
+  }
 }

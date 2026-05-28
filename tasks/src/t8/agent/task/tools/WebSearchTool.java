@@ -21,7 +21,7 @@ public class WebSearchTool extends BaseTool {
 
     public WebSearchTool(String openAiApiKey) {
         this.apiKey = "Bearer " + openAiApiKey;
-        this.endpoint = Constants.OPENAI_RESPONSES_ENDPOINT;
+        this.endpoint = Constants.OPENAI_HOST;
         this.httpClient = HttpClient.newHttpClient();
         this.objectMapper = new ObjectMapper();
     }

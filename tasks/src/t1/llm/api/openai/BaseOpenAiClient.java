@@ -10,14 +10,14 @@ import t1.llm.api.AiClient;
  */
 public abstract class BaseOpenAiClient extends AiClient {
 
-    protected BaseOpenAiClient(String endpoint, String modelName, String apiKey, String systemPrompt) {
-        super(endpoint, modelName, withBearer(apiKey), systemPrompt);
-    }
+  protected BaseOpenAiClient(String url, String modelName, String apiKey, String systemPrompt) {
+    super(url, modelName, withBearer(apiKey), systemPrompt);
+  }
 
-    private static String withBearer(String apiKey) {
-        if (apiKey == null || apiKey.isBlank()) {
-            throw new IllegalArgumentException("apiKey must not be null or blank");
-        }
-        return "Bearer " + apiKey;
+  private static String withBearer(String apiKey) {
+    if (apiKey == null || apiKey.isBlank()) {
+      throw new IllegalArgumentException("apiKey must not be null or blank");
     }
+    return "Bearer " + apiKey;
+  }
 }

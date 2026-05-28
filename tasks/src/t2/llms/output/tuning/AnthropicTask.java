@@ -1,18 +1,17 @@
 package t2.llms.output.tuning;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import t2.llms.output.tuning.clients.AnthropicAiClient;
 
 import java.util.Map;
 
-import static commons.Constants.CLAUDE_SONNET_4_5;
+import static commons.Constants.CLAUDE_SONNET_4_6;
 
 public class AnthropicTask {
 
     public static void main(String[] args) throws JsonProcessingException {
         TuningApp.run(
-                new AnthropicAiClient(CLAUDE_SONNET_4_5),
+                new AnthropicAiClient(CLAUDE_SONNET_4_6),
                 true,
                 false,
 

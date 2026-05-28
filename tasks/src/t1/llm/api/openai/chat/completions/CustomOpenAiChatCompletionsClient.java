@@ -1,7 +1,6 @@
 package t1.llm.api.openai.chat.completions;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import commons.exceptions.TaskNotImplementedException;
 import commons.model.Message;
 import commons.model.Role;
 import t1.llm.api.openai.BaseOpenAiClient;
@@ -24,63 +23,91 @@ import java.util.Map;
  */
 public class CustomOpenAiChatCompletionsClient extends BaseOpenAiClient {
 
-    private static final ObjectMapper MAPPER = new ObjectMapper();
-    private final HttpClient http = HttpClient.newHttpClient();
+  private static final ObjectMapper MAPPER = new ObjectMapper();
+  private static final String COMPLETIONS = "/chat/completions";
+  private final HttpClient http = HttpClient.newHttpClient();
 
-    public CustomOpenAiChatCompletionsClient(String endpoint, String modelName, String apiKey, String systemPrompt) {
-        super(endpoint, modelName, apiKey, systemPrompt);
-    }
+  public CustomOpenAiChatCompletionsClient(String endpoint, String modelName, String apiKey, String systemPrompt) {
+    super(endpoint, modelName, apiKey, systemPrompt);
+  }
 
-    @Override
-    public Message response(List<Message> messages) {
-        //TODO:
-        // https://platform.openai.com/docs/api-reference/chat/create
-        // - Build JSON body using buildRequestBody(messages, false)
-        // - Build HttpRequest using buildRequest(body)
-        // - Send with HttpClient using BodyHandlers.ofString()
-        // - Throw RuntimeException if response status is not 200
-        // - Parse JSON with ObjectMapper; extract content at /choices/0/message/content
-        // - Print content to stdout
-        // - Return new Message(Role.ASSISTANT, content)
-        // - Wrap all checked exceptions in RuntimeException
-        throw new TaskNotImplementedException();
+  @Override
+  public Message response(List<Message> messages) {
+    try {
+      String body = buildRequestBody(messages, false);
+      HttpRequest request = buildRequest(body);
+      HttpResponse<String> httpResponse = http.send(request, HttpResponse.BodyHandlers.ofString());
+      if (httpResponse.statusCode() != 200) {
+        throw new RuntimeException(
+          "Request failed with status " + httpResponse.statusCode() + ": " + httpResponse.body());
+      }
+      String content = MAPPER.readTree(httpResponse.body())
+        .at("/choices/0/message/content").asText();
+      System.out.println(content);
+      return new Message(Role.ASSISTANT, content);
+    } catch (RuntimeException e) {
+      throw e;
+    } catch (Exception e) {
+      throw new RuntimeException(e);
     }
+  }
 
-    @Override
-    public Message streamResponse(List<Message> messages) {
-        //TODO:
-        // https://platform.openai.com/docs/api-reference/chat/create (Streaming tab)
-        // - Build JSON body using buildRequestBody(messages, true)
-        // - Build HttpRequest using buildRequest(body)
-        // - Send with HttpClient using BodyHandlers.ofLines() to get a Stream<String>
-        // - Filter lines starting with "data: "; strip the prefix
-        // - Stop processing when the sentinel "[DONE]" is encountered (use takeWhile)
-        // - For each remaining JSON line, parse with ObjectMapper; extract /choices/0/delta/content
-        // - Print each non-empty delta to stdout; accumulate in a StringBuilder
-        // - Print a newline after the stream ends
-        // - Return new Message(Role.ASSISTANT, accumulated content)
-        // - Wrap all checked exceptions in RuntimeException
-        throw new TaskNotImplementedException();
+  @Override
+  public Message streamResponse(List<Message> messages) {
+    try {
+      String body = buildRequestBody(messages, true);
+      HttpRequest request = buildRequest(body);
+      HttpResponse<java.util.stream.Stream<String>> httpResponse =
+        http.send(request, HttpResponse.BodyHandlers.ofLines());
+      StringBuilder sb = new StringBuilder();
+      httpResponse.body()
+        .filter(line -> line.startsWith("data: "))
+        .map(line -> line.substring("data: ".length()))
+        .takeWhile(data -> !"[DONE]".equals(data))
+        .forEach(data -> {
+          try {
+            String delta = MAPPER.readTree(data).at("/choices/0/delta/content").asText("");
+            if (!delta.isEmpty()) {
+              System.out.print(delta);
+              sb.append(delta);
+            }
+          } catch (Exception e) {
+            throw new RuntimeException(e);
+          }
+        });
+      System.out.println();
+      return new Message(Role.ASSISTANT, sb.toString());
+    } catch (RuntimeException e) {
+      throw e;
+    } catch (Exception e) {
+      throw new RuntimeException(e);
     }
+  }
 
-    private HttpRequest buildRequest(String body) {
-        //TODO:
-        // - Build an HttpRequest.Builder with URI from endpoint
-        // - Add "Authorization" header using apiKey (already contains "Bearer " prefix)
-        // - Add "Content-Type: application/json" header
-        // - Set POST body with HttpRequest.BodyPublishers.ofString(body)
-        // - Build and return the HttpRequest
-        throw new TaskNotImplementedException();
-    }
+  private HttpRequest buildRequest(String body) {
+    String endpoint = url + COMPLETIONS;
+    return HttpRequest.newBuilder()
+      .uri(URI.create(endpoint))
+      .header("Authorization", apiKey)
+      .header("Content-Type", "application/json")
+      .POST(HttpRequest.BodyPublishers.ofString(body))
+      .build();
+  }
 
-    private String buildRequestBody(List<Message> messages, boolean stream) {
-        //TODO:
-        // - Create a messages list; prepend the system message as Map("role"->"system", "content"->systemPrompt)
-        // - Convert each Message to a map via Message.toMap() and append
-        // - Build a body LinkedHashMap with "model" and "messages" keys
-        // - If stream is true, add "stream": true
-        // - Serialize to JSON string with ObjectMapper and return
-        // - Wrap checked exceptions in RuntimeException
-        throw new TaskNotImplementedException();
+  private String buildRequestBody(List<Message> messages, boolean stream) {
+    try {
+      List<Map<String, Object>> msgList = new ArrayList<>();
+      msgList.add(Map.of("role", "system", "content", systemPrompt));
+      messages.stream().map(Message::toMap).forEach(msgList::add);
+      Map<String, Object> bodyMap = new LinkedHashMap<>();
+      bodyMap.put("model", modelName);
+      bodyMap.put("messages", msgList);
+      if (stream) {
+        bodyMap.put("stream", true);
+      }
+      return MAPPER.writeValueAsString(bodyMap);
+    } catch (Exception e) {
+      throw new RuntimeException(e);
     }
+  }
 }

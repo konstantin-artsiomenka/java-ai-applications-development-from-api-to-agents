@@ -2,7 +2,6 @@ package t1.llm.api.openai.responses;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import commons.exceptions.TaskNotImplementedException;
 import commons.model.Message;
 import commons.model.Role;
 import t1.llm.api.openai.BaseOpenAiClient;
@@ -26,73 +25,115 @@ import java.util.stream.Stream;
  */
 public class CustomOpenAiResponsesClient extends BaseOpenAiClient {
 
-    private static final ObjectMapper MAPPER = new ObjectMapper();
-    private final HttpClient http = HttpClient.newHttpClient();
+  private static final ObjectMapper MAPPER = new ObjectMapper();
+  private static final String RESPONSES_ENDPOINT = "/responses";
+  private final HttpClient http = HttpClient.newHttpClient();
 
-    public CustomOpenAiResponsesClient(String endpoint, String modelName, String apiKey, String systemPrompt) {
-        super(endpoint, modelName, apiKey, systemPrompt);
-    }
+  public CustomOpenAiResponsesClient(String endpoint, String modelName, String apiKey, String systemPrompt) {
+    super(endpoint, modelName, apiKey, systemPrompt);
+  }
 
-    @Override
-    public Message response(List<Message> messages) {
-        //TODO:
-        // https://platform.openai.com/docs/api-reference/responses/create
-        // - Build JSON body using buildRequestBody(messages, false)
-        // - Build HttpRequest using buildRequest(body)
-        // - Send with HttpClient using BodyHandlers.ofString()
-        // - Throw RuntimeException if response status is not 200
-        // - Parse JSON with ObjectMapper; extract output text using extractOutputText()
-        // - Print content to stdout
-        // - Return new Message(Role.ASSISTANT, content)
-        // - Wrap all checked exceptions in RuntimeException
-        throw new TaskNotImplementedException();
+  @Override
+  public Message response(List<Message> messages) {
+    try {
+      String body = buildRequestBody(messages, false);
+      HttpRequest request = buildRequest(body);
+      HttpResponse<String> httpResponse = http.send(request, HttpResponse.BodyHandlers.ofString());
+      if (httpResponse.statusCode() != 200) {
+        throw new RuntimeException(
+          "Request failed with status " + httpResponse.statusCode() + ": " + httpResponse.body());
+      }
+      JsonNode root = MAPPER.readTree(httpResponse.body());
+      String content = extractOutputText(root);
+      System.out.println(content);
+      return new Message(Role.ASSISTANT, content);
+    } catch (RuntimeException e) {
+      throw e;
+    } catch (Exception e) {
+      throw new RuntimeException(e);
     }
+  }
 
-    @Override
-    public Message streamResponse(List<Message> messages) {
-        //TODO:
-        // https://platform.openai.com/docs/api-reference/responses/create (Streaming tab)
-        // - Build JSON body using buildRequestBody(messages, true)
-        // - Build HttpRequest using buildRequest(body)
-        // - Send with HttpClient using BodyHandlers.ofLines()
-        // - Iterate over lines, tracking the current SSE event type (lines starting with "event: ")
-        // - For "data: " lines where current event type is "response.output_text.delta":
-        //   parse JSON with ObjectMapper and extract the "delta" field text
-        // - Print each non-empty delta to stdout; accumulate in a StringBuilder
-        // - Reset current event tracker on empty lines
-        // - Print a newline after the stream ends
-        // - Return new Message(Role.ASSISTANT, accumulated content)
-        // - Wrap all checked exceptions in RuntimeException
-        throw new TaskNotImplementedException();
+  @Override
+  public Message streamResponse(List<Message> messages) {
+    try {
+      String body = buildRequestBody(messages, true);
+      HttpRequest request = buildRequest(body);
+      HttpResponse<Stream<String>> httpResponse = http.send(request, HttpResponse.BodyHandlers.ofLines());
+      StringBuilder sb = new StringBuilder();
+      String[] currentEvent = {""};
+      httpResponse.body().forEach(line -> {
+        try {
+          if (line.startsWith("event: ")) {
+            currentEvent[0] = line.substring("event: ".length()).trim();
+          } else if (line.startsWith("data: ")) {
+            if ("response.output_text.delta".equals(currentEvent[0])) {
+              String json = line.substring("data: ".length());
+              JsonNode node = MAPPER.readTree(json);
+              String delta = node.path("delta").asText("");
+              if (!delta.isEmpty()) {
+                System.out.print(delta);
+                sb.append(delta);
+              }
+            }
+          } else if (line.isEmpty()) {
+            currentEvent[0] = "";
+          }
+        } catch (Exception e) {
+          throw new RuntimeException(e);
+        }
+      });
+      System.out.println();
+      return new Message(Role.ASSISTANT, sb.toString());
+    } catch (RuntimeException e) {
+      throw e;
+    } catch (Exception e) {
+      throw new RuntimeException(e);
     }
+  }
 
-    private HttpRequest buildRequest(String body) {
-        //TODO:
-        // - Build an HttpRequest.Builder with URI from endpoint
-        // - Add "Authorization" header using apiKey (already contains "Bearer " prefix)
-        // - Add "Content-Type: application/json" header
-        // - Set POST body with HttpRequest.BodyPublishers.ofString(body)
-        // - Build and return the HttpRequest
-        throw new TaskNotImplementedException();
-    }
+  private HttpRequest buildRequest(String body) {
+    String endpoint = url + RESPONSES_ENDPOINT;
+    return HttpRequest.newBuilder()
+      .uri(URI.create(endpoint))
+      .header("Authorization", apiKey)
+      .header("Content-Type", "application/json")
+      .POST(HttpRequest.BodyPublishers.ofString(body))
+      .build();
+  }
 
-    private String buildRequestBody(List<Message> messages, boolean stream) {
-        //TODO:
-        // - Convert each Message to a map via Message.toMap() and collect to a list
-        // - Build a body LinkedHashMap with "model", "instructions" (systemPrompt), and "input" (messages list)
-        // - If stream is true, add "stream": true
-        // - Serialize to JSON string with ObjectMapper and return
-        // - Wrap checked exceptions in RuntimeException
-        throw new TaskNotImplementedException();
+  private String buildRequestBody(List<Message> messages, boolean stream) {
+    try {
+      List<Map<String, Object>> inputList = messages.stream()
+        .map(Message::toMap)
+        .collect(java.util.stream.Collectors.toList());
+      Map<String, Object> bodyMap = new LinkedHashMap<>();
+      bodyMap.put("model", modelName);
+      bodyMap.put("instructions", systemPrompt);
+      bodyMap.put("input", inputList);
+      if (stream) {
+        bodyMap.put("stream", true);
+      }
+      return MAPPER.writeValueAsString(bodyMap);
+    } catch (Exception e) {
+      throw new RuntimeException(e);
     }
+  }
 
-    private String extractOutputText(JsonNode root) {
-        //TODO:
-        // - Iterate over the "output" array in the root JsonNode
-        // - Find items where type field equals "message"
-        // - Within each such item, iterate the "content" array and find parts where type equals "output_text"
-        // - Return the "text" field value from the first matching part
-        // - Throw RuntimeException if no output text is found
-        throw new TaskNotImplementedException();
+  private String extractOutputText(JsonNode root) {
+    Iterator<JsonNode> outputItems = root.path("output").elements();
+    while (outputItems.hasNext()) {
+      JsonNode item = outputItems.next();
+      if ("message".equals(item.path("type").asText())) {
+        Iterator<JsonNode> contentParts = item.path("content").elements();
+        while (contentParts.hasNext()) {
+          JsonNode part = contentParts.next();
+          if ("output_text".equals(part.path("type").asText())) {
+            return part.path("text").asText();
+          }
+        }
+      }
     }
+    throw new RuntimeException("No output text found in response");
+  }
 }

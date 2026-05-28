@@ -6,7 +6,9 @@ import com.openai.models.responses.EasyInputMessage;
 import com.openai.models.responses.ResponseCreateParams;
 import com.openai.models.responses.ResponseInputItem;
 import com.openai.models.ResponsesModel;
-import commons.exceptions.TaskNotImplementedException;
+import com.openai.models.responses.ResponseOutputItem;
+import com.openai.models.responses.ResponseOutputMessage;
+import com.openai.models.responses.ResponseStreamEvent;
 import commons.model.Message;
 import commons.model.Role;
 import t1.llm.api.openai.BaseOpenAiClient;
@@ -23,48 +25,67 @@ import java.util.stream.Collectors;
  */
 public class OpenAiResponsesClient extends BaseOpenAiClient {
 
-    private OpenAIClient client;
+  private final OpenAIClient client;
 
-    public OpenAiResponsesClient(String endpoint, String modelName, String apiKey, String systemPrompt) {
-        super(endpoint, modelName, apiKey, systemPrompt);
-        //TODO:
-        // - Build an OpenAIClient using OpenAIOkHttpClient.builder(), set apiKey, and call build()
-        // - Assign the result to this.client
-    }
+  public OpenAiResponsesClient(String url, String modelName, String apiKey, String systemPrompt) {
+    super(url, modelName, apiKey, systemPrompt);
+    String rawKey = this.apiKey.startsWith("Bearer ") ? this.apiKey.substring("Bearer ".length()) : this.apiKey;
+    this.client = OpenAIOkHttpClient.builder()
+      .baseUrl(url)
+      .apiKey(rawKey)
+      .build();
+  }
 
-    @Override
-    public Message response(List<Message> messages) {
-        //TODO:
-        // - Build ResponseCreateParams using buildParams(messages)
-        // - Call client.responses().create(params)
-        // - Find the output item where isMessage() is true; find the content part where isOutputText() is true
-        // - Extract the text string via asOutputText().text()
-        // - Print content to stdout
-        // - Return new Message(Role.ASSISTANT, content)
-        throw new TaskNotImplementedException();
-    }
+  @Override
+  public Message response(List<Message> messages) {
+    ResponseCreateParams params = buildParams(messages);
+    var response = client.responses().create(params);
+    String content = response.output().stream()
+      .filter(ResponseOutputItem::isMessage)
+      .findFirst()
+      .orElseThrow(() -> new RuntimeException("No message output found"))
+      .asMessage()
+      .content().stream()
+      .filter(ResponseOutputMessage.Content::isOutputText)
+      .findFirst()
+      .orElseThrow(() -> new RuntimeException("No output text found"))
+      .asOutputText()
+      .text();
+    System.out.println(content);
+    return new Message(Role.ASSISTANT, content);
+  }
 
-    @Override
-    public Message streamResponse(List<Message> messages) {
-        //TODO:
-        // - Build ResponseCreateParams using buildParams(messages)
-        // - Open a streaming call via client.responses().createStreaming(params) (try-with-resources)
-        // - Filter events where isOutputTextDelta() is true; extract delta text via asOutputTextDelta().delta()
-        // - Print each delta to stdout; accumulate in a StringBuilder
-        // - Print a newline after the stream ends
-        // - Return new Message(Role.ASSISTANT, accumulated content)
-        throw new TaskNotImplementedException();
+  @Override
+  public Message streamResponse(List<Message> messages) {
+    ResponseCreateParams params = buildParams(messages);
+    StringBuilder sb = new StringBuilder();
+    try (var stream = client.responses().createStreaming(params)) {
+      stream.stream()
+        .filter(ResponseStreamEvent::isOutputTextDelta)
+        .forEach(event -> {
+          String delta = event.asOutputTextDelta().delta();
+          System.out.print(delta);
+          sb.append(delta);
+        });
     }
+    System.out.println();
+    return new Message(Role.ASSISTANT, sb.toString());
+  }
 
-    private ResponseCreateParams buildParams(List<Message> messages) {
-        //TODO:
-        // - For each Message, build a ResponseInputItem via ResponseInputItem.ofEasyInputMessage()
-        //   using EasyInputMessage.builder() with role (EasyInputMessage.Role.of(role.getValue())) and content
-        // - Build ResponseCreateParams with:
-        //   - model: ResponsesModel.ofString(modelName)
-        //   - instructions: systemPrompt
-        //   - inputOfResponse: the list of ResponseInputItems
-        // - Build and return the params
-        throw new TaskNotImplementedException();
-    }
+  private ResponseCreateParams buildParams(List<Message> messages) {
+    List<ResponseInputItem> inputItems = messages.stream()
+      .map(msg -> ResponseInputItem.ofEasyInputMessage(
+        EasyInputMessage.builder()
+          .role(EasyInputMessage.Role.of(msg.role().getValue()))
+          .content(msg.content())
+          .build()
+      ))
+      .collect(Collectors.toList());
+
+    return ResponseCreateParams.builder()
+      .model(ResponsesModel.ofString(modelName))
+      .instructions(systemPrompt)
+      .inputOfResponse(inputItems)
+      .build();
+  }
 }
