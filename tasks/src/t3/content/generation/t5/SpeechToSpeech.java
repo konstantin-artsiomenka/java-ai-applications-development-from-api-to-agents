@@ -24,17 +24,65 @@ import java.util.Base64;
  */
 public class SpeechToSpeech {
 
-    private static final ObjectMapper MAPPER = new ObjectMapper();
-    private static final HttpClient HTTP = HttpClient.newHttpClient();
+  private static final ObjectMapper MAPPER = new ObjectMapper();
+  private static final HttpClient HTTP = HttpClient.newHttpClient();
 
-    public static void main(String[] args) throws Exception {
-        //TODO:
-        //  https://developers.openai.com/api/docs/guides/audio#add-audio-to-your-existing-application
-        // - Load 'question.mp3' and encode it to base64
-        // - Define a JSON payload for /v1/chat/completions with model 'gpt-4o-audio-preview'
-        // - Set 'modalities' to ["text", "audio"] and configure the 'audio' object (voice, format)
-        // - Send a POST request to Constants.OPENAI_CHAT_COMPLETIONS_ENDPOINT
-        // - Extract 'audio.data' from the response, decode it, and save as an .mp3 file
+  static void main(String[] args) throws Exception {
+    // Load and base64-encode the audio question
+    Path audioPath = Path.of("tasks/src/t3/content/generation/t5/question.mp3");
+    String audioBase64 = Base64.getEncoder().encodeToString(Files.readAllBytes(audioPath));
+
+    // Build input_audio content part
+    ObjectNode inputAudioData = MAPPER.createObjectNode();
+    inputAudioData.put("data", audioBase64);
+    inputAudioData.put("format", "mp3");
+
+    ObjectNode contentPart = MAPPER.createObjectNode();
+    contentPart.put("type", "input_audio");
+    contentPart.set("input_audio", inputAudioData);
+
+    // Build user message
+    ObjectNode userMessage = MAPPER.createObjectNode();
+    userMessage.put("role", "user");
+    userMessage.set("content", MAPPER.createArrayNode().add(contentPart));
+
+    // Build audio output config
+    ObjectNode audioConfig = MAPPER.createObjectNode();
+    audioConfig.put("voice", "alloy");
+    audioConfig.put("format", "mp3");
+
+    // Build full request body
+    ObjectNode body = MAPPER.createObjectNode();
+    body.put("model", "gpt-audio-1.5");
+    body.set("modalities", MAPPER.createArrayNode().add("text").add("audio"));
+    body.set("audio", audioConfig);
+    body.set("messages", MAPPER.createArrayNode().add(userMessage));
+
+    HttpRequest request = HttpRequest.newBuilder()
+      .uri(URI.create(Constants.OPENAI_HOST + "/chat/completions"))
+      .header("Authorization", "Bearer " + Constants.OPENAI_API_KEY)
+      .header("Content-Type", "application/json")
+      .POST(HttpRequest.BodyPublishers.ofString(MAPPER.writeValueAsString(body)))
+      .build();
+
+    HttpResponse<String> response = HTTP.send(request, HttpResponse.BodyHandlers.ofString());
+    if (response.statusCode() != 200) {
+      throw new RuntimeException("Request failed with status " + response.statusCode() + ": " + response.body());
     }
 
+    // Extract text transcript and audio data
+    var responseJson = MAPPER.readTree(response.body());
+    var choice = responseJson.at("/choices/0/message");
+
+    String textContent = choice.at("/audio/transcript").asText("");
+    System.out.println("Transcript: " + textContent);
+
+    String audioData = choice.at("/audio/data").asText();
+    byte[] audioBytes = Base64.getDecoder().decode(audioData);
+
+    String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
+    Path outputPath = Path.of("tasks/src/t3/content/generation/t5/answer_" + timestamp + ".mp3");
+    Files.write(outputPath, audioBytes);
+    System.out.println("Audio saved to: " + outputPath);
+  }
 }

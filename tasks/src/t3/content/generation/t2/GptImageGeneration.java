@@ -23,16 +23,36 @@ import java.util.Base64;
  */
 public class GptImageGeneration {
 
-    private static final ObjectMapper MAPPER = new ObjectMapper();
-    private static final HttpClient HTTP = HttpClient.newHttpClient();
+  private static final ObjectMapper MAPPER = new ObjectMapper();
+  private static final HttpClient HTTP = HttpClient.newHttpClient();
 
-    public static void main(String[] args) throws Exception {
-        //TODO:
-        // - Define a JSON payload for /v1/images/generations with model 'gpt-image-2'
-        // - Set 'prompt' to 'Smiling catdog'
-        // - Send a POST request to Constants.OPENAI_IMAGES_GENERATIONS_ENDPOINT
-        // - Extract 'b64_json' from the response, decode it, and save as a .png file
+  static void main(String[] args) throws Exception {
+    String json = MAPPER.writeValueAsString(java.util.Map.of(
+      "model", "gpt-image-2",
+      "prompt", "Smiling catdog"
+    ));
+
+    HttpRequest request = HttpRequest.newBuilder()
+      .uri(URI.create(Constants.OPENAI_IMAGES_GENERATIONS_ENDPOINT))
+      .header("Authorization", "Bearer " + Constants.OPENAI_API_KEY)
+      .header("Content-Type", "application/json")
+      .POST(HttpRequest.BodyPublishers.ofString(json))
+      .build();
+
+    HttpResponse<String> response = HTTP.send(request, HttpResponse.BodyHandlers.ofString());
+    if (response.statusCode() != 200) {
+      throw new RuntimeException("Request failed with status " + response.statusCode() + ": " + response.body());
     }
+
+    JsonNode responseJson = MAPPER.readTree(response.body());
+    String b64Json = responseJson.at("/data/0/b64_json").asText();
+    byte[] imageBytes = Base64.getDecoder().decode(b64Json);
+
+    String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
+    Path outputPath = Path.of("tasks/src/t3/content/generation/t2/catdog_" + timestamp + ".png");
+    Files.write(outputPath, imageBytes);
+    System.out.println("Image saved to: " + outputPath);
+  }
 }
 
 //  https://developers.openai.com/api/reference/resources/images/methods/generate
