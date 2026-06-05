@@ -29,7 +29,13 @@ public class InputVectorBasedGroundingApp {
     //   - Answer ONLY based on the provided RAG CONTEXT and conversation history
     //   - If no relevant information exists in RAG CONTEXT, state that the question cannot be answered
     private static final String SYSTEM_PROMPT = """
-
+            You are a RAG-powered assistant.
+            The user message contains two sections:
+            - RAG CONTEXT: retrieved user data relevant to the query.
+            - USER QUESTION: the user's actual question.
+            Instructions:
+            - Answer ONLY based on the provided RAG CONTEXT and conversation history.
+            - If no relevant information exists in RAG CONTEXT, clearly state that you cannot answer the question.
             """;
 
     //TODO:
@@ -37,7 +43,11 @@ public class InputVectorBasedGroundingApp {
     //   - {context} - the retrieved user data from vector store
     //   - {query}   - the user's question
     private static final String USER_PROMPT = """
+            ## RAG CONTEXT:
+            {context}
 
+            ## USER QUESTION:
+            {query}
             """;
 
     private final OpenAIClient openAiClient;
@@ -51,48 +61,58 @@ public class InputVectorBasedGroundingApp {
     }
 
     private SimpleVectorStore buildVectorStore(OpenAiEmbeddingModel embeddingModel) {
-        //TODO:
-        // - Print "🔎 Loading all users..."
-        // - Fetch all users via new UserService().getAllUsers()
-        // - Print "↗️ Formatting {count} user documents and creating embeddings..."
-        // - Map users to Documents using Document.builder().id(String.valueOf(u.id())).text(u.toDocument()).build()
-        // - Create SimpleVectorStore via SimpleVectorStore.builder(embeddingModel).build()
-        // - Call addInParallel(store, documents, 50)
-        // - Print "✅ Vectorstore is ready."
-        // - Return store
-        throw new TaskNotImplementedException();
+        System.out.println("🔎 Loading all users...");
+        List<User> users = new UserService().getAllUsers();
+        System.out.println("↗️ Formatting " + users.size() + " user documents and creating embeddings...");
+        List<Document> documents = users.stream()
+                .map(u -> Document.builder().id(String.valueOf(u.id())).text(u.toDocument()).build())
+                .collect(Collectors.toList());
+        SimpleVectorStore store = SimpleVectorStore.builder(embeddingModel).build();
+        addInParallel(store, documents, 50);
+        System.out.println("✅ Vectorstore is ready.");
+        return store;
     }
 
     private static void addInParallel(SimpleVectorStore store, List<Document> documents, int batchSize) {
-        //TODO:
-        // - Split documents into batches of batchSize using subList (loop with i += batchSize)
-        // - Create a list of CompletableFuture<Void> tasks via runAsync: each calls store.add(batch)
-        // - Wait for all futures with CompletableFuture.allOf(...).join()
+        List<CompletableFuture<Void>> futures = new ArrayList<>();
+        for (int i = 0; i < documents.size(); i += batchSize) {
+            List<Document> batch = documents.subList(i, Math.min(i + batchSize, documents.size()));
+            futures.add(CompletableFuture.runAsync(() -> store.add(batch)));
+        }
+        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
     }
 
     private String retrieveContext(String query, int k, double minScore) {
         System.out.println("Retrieving context...");
-        //TODO:
-        // - Build SearchRequest with query, topK=k, similarityThreshold=minScore
-        // - Call vectorStore.similaritySearch(request)
-        // - For each result, print "Retrieved (Score: {score}): {text}" and collect text into contextParts
-        // - Print separator of 100 "=" characters
-        // - Return contextParts joined with "\n\n"
-        throw new TaskNotImplementedException();
+        SearchRequest request = SearchRequest.builder()
+                .query(query)
+                .topK(k)
+                .similarityThreshold(minScore)
+                .build();
+        List<String> contextParts = vectorStore.similaritySearch(request).stream()
+                .peek(doc -> System.out.println("Retrieved (Score: " +
+                        doc.getMetadata().getOrDefault("distance", "N/A") + "): " + doc.getText()))
+                .map(Document::getText)
+                .collect(Collectors.toList());
+        System.out.println("=".repeat(100));
+        return String.join("\n\n", contextParts);
     }
 
     private String augmentPrompt(String query, String context) {
-        //TODO:
-        // - Return USER_PROMPT with {context} and {query} replaced
-        throw new TaskNotImplementedException();
+        return USER_PROMPT
+                .replace("{context}", context)
+                .replace("{query}", query);
     }
 
     private String generateAnswer(String augmentedPrompt) {
-        //TODO:
-        // - Build ChatCompletionCreateParams with GPT_4O_MINI, temperature=0.0, SYSTEM_PROMPT and augmentedPrompt
-        // - Call openAiClient.chat().completions().create(params)
-        // - Return content from completion.choices().get(0).message().content() (default to "" if absent)
-        throw new TaskNotImplementedException();
+        ChatCompletionCreateParams params = ChatCompletionCreateParams.builder()
+                .model(Constants.GPT_4O_MINI)
+                .temperature(0.0)
+                .addSystemMessage(SYSTEM_PROMPT)
+                .addUserMessage(augmentedPrompt)
+                .build();
+        return openAiClient.chat().completions().create(params)
+                .choices().getFirst().message().content().orElse("");
     }
 
     public static void main(String[] args) {
@@ -122,23 +142,11 @@ public class InputVectorBasedGroundingApp {
             if (query.isEmpty()) continue;
             if (query.equalsIgnoreCase("quit") || query.equalsIgnoreCase("exit")) break;
 
-            //TODO:
-            // - Call app.retrieveContext(query, 10, 0.1) and store in context
-            // - Call app.augmentPrompt(query, context) and store in augmented
-            // - Call app.generateAnswer(augmented) and print the answer
+            String context  = app.retrieveContext(query, 10, 0.1);
+            String augmented = app.augmentPrompt(query, context);
+            String answer   = app.generateAnswer(augmented);
+            System.out.println("\nAnswer: " + answer);
         }
     }
 }
 
-// The problems with Vector based Grounding approach are:
-//   - In current solution we fetched all users once, prepared Vector store (Embed takes money) but we didn't play
-//     around the point that new users added and deleted every 5 minutes. (Actually, it can be fixed, we can create once
-//     Vector store and with new request we will fetch all the users, compare new and deleted with version in Vector
-//     store and delete the data about deleted users and add new users).
-//   - Limit with top_k (we can set up to 100, but what if the real number of similarity search 100+?)
-//   - With some requests works not so perfectly.
-//   - Need to play with balance between top_k and score_threshold
-// Benefits are:
-//   - Similarity search by context
-//   - Any input can be used for search
-//   - Costs reduce

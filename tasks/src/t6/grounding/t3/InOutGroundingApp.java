@@ -40,7 +40,15 @@ public class InOutGroundingApp {
     //   - Return only valid JSON matching this format:
     //     {"grouping_results": [{"hobby": "hiking", "user_ids": [1, 2, 3]}, {"hobby": "camping", "user_ids": [4, 5]}]}
     private static final String SYSTEM_PROMPT = """
-
+            You are a hobby-grouping assistant (Named Entity Extraction).
+            The user message contains user IDs and their about_me sections.
+            Your task:
+            - Analyze each user's about_me section.
+            - Identify hobbies that match the user's search query.
+            - Group matching user IDs under their relevant hobby.
+            - Return ONLY valid JSON in this exact format (no extra text):
+              {"grouping_results": [{"hobby": "hiking", "user_ids": [1, 2, 3]}, {"hobby": "camping", "user_ids": [4, 5]}]}
+            - If no users match, return: {"grouping_results": []}
             """;
 
     //TODO:
@@ -48,7 +56,11 @@ public class InOutGroundingApp {
     //   - {context} - the retrieved user hobby data from vector store (id + about_me only)
     //   - {query}   - the user's search question
     private static final String USER_PROMPT = """
+            ## USER DATA:
+            {context}
 
+            ## SEARCH QUERY:
+            {query}
             """;
 
     private final OpenAIClient openAiClient;
@@ -67,65 +79,108 @@ public class InOutGroundingApp {
     }
 
     private void initializeVectorStore() {
-        //TODO:
-        // - Print "🔍 Loading all users for initial vectorstore..."
-        // - Fetch all users via userService.getAllUsers()
-        // - Map users to Documents using Document.builder().id(String.valueOf(u.id())).text(u.toHobbyDocument()).build()
-        //   Note: use toHobbyDocument() (embeds only id + about_me) to reduce embedding context
-        // - Call addInParallel(vectorStore, documents, 50)
-        // - Add all user IDs to knownUserIds set
-        // - Print "Setup FINISHED"
+        System.out.println("🔍 Loading all users for initial vectorstore...");
+        List<User> users = userService.getAllUsers();
+        List<Document> documents = users.stream()
+                .map(u -> Document.builder().id(String.valueOf(u.id())).text(u.toHobbyDocument()).build())
+                .collect(Collectors.toList());
+        addInParallel(vectorStore, documents, 50);
+        users.forEach(u -> knownUserIds.add(String.valueOf(u.id())));
+        System.out.println("Setup FINISHED");
     }
 
     private void updateVectorStore() {
-        //TODO: (adaptive sync — called before every retrieval)
-        // - Fetch current users via userService.getAllUsers(), build a Map<String, User> keyed by id string
-        // - Compute newIds: currentIds minus knownUserIds
-        // - Compute deletedIds: knownUserIds minus currentIds
-        // - If deletedIds not empty: call vectorStore.delete(new ArrayList<>(deletedIds)),
-        //   remove from knownUserIds, and print how many were deleted
-        // - If newIds not empty: map new IDs to Documents using toHobbyDocument(),
-        //   call addInParallel(vectorStore, newDocuments, 50),
-        //   add to knownUserIds, and print how many were added
+        List<User> currentUsers = userService.getAllUsers();
+        Map<String, User> currentMap = currentUsers.stream()
+                .collect(Collectors.toMap(u -> String.valueOf(u.id()), u -> u));
+        Set<String> currentIds = currentMap.keySet();
+
+        Set<String> newIds = new HashSet<>(currentIds);
+        newIds.removeAll(knownUserIds);
+
+        Set<String> deletedIds = new HashSet<>(knownUserIds);
+        deletedIds.removeAll(currentIds);
+
+        if (!deletedIds.isEmpty()) {
+            vectorStore.delete(new ArrayList<>(deletedIds));
+            knownUserIds.removeAll(deletedIds);
+            System.out.println("Deleted " + deletedIds.size() + " users from vectorstore.");
+        }
+        if (!newIds.isEmpty()) {
+            List<Document> newDocuments = newIds.stream()
+                    .map(id -> currentMap.get(id))
+                    .map(u -> Document.builder().id(String.valueOf(u.id())).text(u.toHobbyDocument()).build())
+                    .collect(Collectors.toList());
+            addInParallel(vectorStore, newDocuments, 50);
+            knownUserIds.addAll(newIds);
+            System.out.println("Added " + newIds.size() + " new users to vectorstore.");
+        }
     }
 
     private String retrieveContext(String query, int k, double minScore) {
-        //TODO:
-        // - Call updateVectorStore() to sync additions/deletions before each retrieval
-        // - Print "Retrieving context..."
-        // - Build SearchRequest with query, topK=k, similarityThreshold=minScore
-        // - Call vectorStore.similaritySearch(request)
-        // - For each result, print "Retrieved (Score: {score}): {text}" and collect text into contextParts
-        // - Print separator of 100 "=" characters
-        // - Return contextParts joined with "\n\n"
-        throw new TaskNotImplementedException();
+        updateVectorStore();
+        System.out.println("Retrieving context...");
+        SearchRequest request = SearchRequest.builder()
+                .query(query)
+                .topK(k)
+                .similarityThreshold(minScore)
+                .build();
+        List<String> contextParts = vectorStore.similaritySearch(request).stream()
+                .peek(doc -> System.out.println("Retrieved (Score: " +
+                        doc.getMetadata().getOrDefault("distance", "N/A") + "): " + doc.getText()))
+                .map(Document::getText)
+                .collect(Collectors.toList());
+        System.out.println("=".repeat(100));
+        return String.join("\n\n", contextParts);
     }
 
     private String augmentPrompt(String query, String context) {
-        //TODO:
-        // - Return USER_PROMPT with {context} and {query} replaced
-        throw new TaskNotImplementedException();
+        return USER_PROMPT
+                .replace("{context}", context)
+                .replace("{query}", query);
     }
 
     private List<GroupingResult> generateGroupingResults(String augmentedPrompt) {
-        //TODO:
-        // - Build ChatCompletionCreateParams with GPT_4_1_NANO, temperature=0.0, SYSTEM_PROMPT,
-        //   augmentedPrompt, and ResponseFormatJsonObject response format
-        // - Call openAiClient.chat().completions().create(params), extract JSON string from first choice
-        // - Parse JSON with objectMapper: read "grouping_results" array node
-        // - If array is missing or not an array: return List.of()
-        // - For each grouping node: extract "hobby" string and "user_ids" array (each element as int)
-        // - Collect into List<GroupingResult> and return
-        // - Wrap checked exceptions in RuntimeException
-        throw new TaskNotImplementedException();
+        try {
+            ChatCompletionCreateParams params = ChatCompletionCreateParams.builder()
+                    .model(Constants.GPT_4_1_NANO)
+                    .temperature(0.0)
+                    .addSystemMessage(SYSTEM_PROMPT)
+                    .addUserMessage(augmentedPrompt)
+                    .responseFormat(ResponseFormatJsonObject.builder().build())
+                    .build();
+            String json = openAiClient.chat().completions().create(params)
+                    .choices().getFirst().message().content().orElse("{}");
+
+            JsonNode groupingsNode = objectMapper.readTree(json).path("grouping_results");
+            if (groupingsNode.isMissingNode() || !groupingsNode.isArray()) {
+                return List.of();
+            }
+
+            List<GroupingResult> results = new ArrayList<>();
+            for (JsonNode node : groupingsNode) {
+                String hobby = node.path("hobby").asText();
+                List<Integer> userIds = new ArrayList<>();
+                for (JsonNode idNode : node.path("user_ids")) {
+                    userIds.add(idNode.asInt());
+                }
+                results.add(new GroupingResult(hobby, userIds));
+            }
+            return results;
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
     }
 
     private void groundResponse(List<GroupingResult> groupingResults) {
-        //TODO: (output grounding — verify IDs exist and fetch full user data)
-        // - For each GroupingResult: print "Hobby: {hobby}"
-        // - Stream result.userIds(), map each id to userService.getUser(id) (returns Optional<User>)
-        // - Flatten with Optional::stream to skip absent users (validates IDs against live data)
-        // - Print the found users and a "----------" separator
+        for (GroupingResult result : groupingResults) {
+            System.out.println("Hobby: " + result.hobby());
+            result.userIds().stream()
+                    .map(id -> userService.getUser(id))
+                    .flatMap(Optional::stream)
+                    .forEach(user -> System.out.println(user.toDocument()));
+            System.out.println("----------");
+        }
     }
 
     private static void addInParallel(SimpleVectorStore store, List<Document> documents, int batchSize) {
@@ -169,11 +224,10 @@ public class InOutGroundingApp {
             if (query.isEmpty()) continue;
             if (query.equalsIgnoreCase("quit") || query.equalsIgnoreCase("exit")) break;
 
-            //TODO:
-            // - Call app.retrieveContext(query, 100, 0.2) for input grounding (semantic search)
-            // - Call app.augmentPrompt(query, context)
-            // - Call app.generateGroupingResults(augmented) to get hobby → user IDs groupings from LLM
-            // - Call app.groundResponse(groupingResults) for output grounding (fetches live user data)
+            String context   = app.retrieveContext(query, 100, 0.2);
+            String augmented = app.augmentPrompt(query, context);
+            List<GroupingResult> results = app.generateGroupingResults(augmented);
+            app.groundResponse(results);
         }
     }
 }

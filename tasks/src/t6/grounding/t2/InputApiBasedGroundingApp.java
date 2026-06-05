@@ -17,33 +17,43 @@ import java.util.stream.Collectors;
 
 public class InputApiBasedGroundingApp {
 
-    //TODO:
-    // Define QUERY_ANALYSIS_PROMPT - instructs the LLM to act as a query analysis system:
-    //   - Available search fields: name, surname, email
-    //   - Analyze the user question and extract explicit search values
-    //   - Map extracted values to the appropriate search fields
-    //   - Only extract values that are clearly stated - do not infer or assume
-    //   - Include examples: "Who is John?" → name: "John", "Find John Smith" → name: "John", surname: "Smith"
     private static final String QUERY_ANALYSIS_PROMPT = """
-            
+            You are a query analysis system. Your task is to extract explicit search parameters from the user's question.
+            Available search fields: name, surname, email.
+            - Analyze the user question and extract only values that are clearly and explicitly stated.
+            - Map extracted values to the appropriate search fields.
+            - Do NOT infer, assume, or guess values that are not directly mentioned.
+            - Examples:
+                "Who is John?" → name: "John"
+                "Find John Smith" → name: "John", surname: "Smith"
+                "Show me user with email test@test.com" → email: "test@test.com"
+            - Return a JSON object in this exact format:
+            {
+              "search_request_parameters": [
+                {"search_field": "name", "search_value": "John"},
+                {"search_field": "surname", "search_value": "Smith"}
+              ]
+            }
+            - If no explicit values can be extracted, return: {"search_request_parameters": []}
             """;
 
-    //TODO:
-    // Define SYSTEM_PROMPT - instructs the LLM to act as a RAG-powered assistant:
-    //   - The user message contains two sections: RAG CONTEXT and USER QUESTION
-    //   - Answer ONLY based on the provided RAG CONTEXT and conversation history
-    //   - If no relevant information exists in RAG CONTEXT, state that the question cannot be answered
-    //   - Format user information clearly when presenting it
     private static final String SYSTEM_PROMPT = """
-            
+            You are a RAG-powered assistant.
+            The user message contains two sections:
+            - RAG CONTEXT: retrieved user data relevant to the query.
+            - USER QUESTION: the user's actual question.
+            Instructions:
+            - Answer ONLY based on the provided RAG CONTEXT and conversation history.
+            - If no relevant information exists in RAG CONTEXT, clearly state that you cannot answer the question.
+            - Format user information clearly and in an organized manner when presenting it.
             """;
 
-    //TODO:
-    // Define USER_PROMPT template with two placeholders:
-    //   - {context} - the retrieved user data formatted as text
-    //   - {query}   - the user's original question
     private static final String USER_PROMPT = """
-            
+            ## RAG CONTEXT:
+            {context}
+
+            ## USER QUESTION:
+            {query}
             """;
 
     private final OpenAIClient openAiClient;
@@ -58,33 +68,59 @@ public class InputApiBasedGroundingApp {
     }
 
     private List<User> retrieveContext(String userQuestion) {
-        //TODO:
-        // - Build ChatCompletionCreateParams with GPT_4_1_NANO, temperature=0.0, QUERY_ANALYSIS_PROMPT,
-        //   userQuestion, and ResponseFormatJsonObject response format
-        // - Call openAiClient.chat().completions().create(params), extract JSON string from first choice
-        // - Parse JSON with objectMapper: read "search_request_parameters" array node
-        // - If array is missing or empty: print "No specific search parameters found!" and return List.of()
-        // - Iterate params: switch on "search_field" to assign name/surname/email variables
-        // - Print search parameters and return userService.searchUsers(name, surname, email)
-        // - Wrap checked exceptions in RuntimeException
-        throw new TaskNotImplementedException();
+        try {
+            ChatCompletionCreateParams params = ChatCompletionCreateParams.builder()
+                    .model(Constants.GPT_4_1_NANO)
+                    .temperature(0.0)
+                    .addSystemMessage(QUERY_ANALYSIS_PROMPT)
+                    .addUserMessage(userQuestion)
+                    .responseFormat(ResponseFormatJsonObject.builder().build())
+                    .build();
+            String json = openAiClient.chat().completions().create(params)
+                    .choices().getFirst().message().content().orElse("{}");
+
+            JsonNode paramsArray = objectMapper.readTree(json).path("search_request_parameters");
+            if (paramsArray.isMissingNode() || paramsArray.isEmpty()) {
+                System.out.println("No specific search parameters found!");
+                return List.of();
+            }
+
+            String name = null, surname = null, email = null;
+            for (JsonNode param : paramsArray) {
+                String field = param.path("search_field").asText();
+                String value = param.path("search_value").asText();
+                switch (field) {
+                    case "name"    -> name = value;
+                    case "surname" -> surname = value;
+                    case "email"   -> email = value;
+                }
+            }
+
+            System.out.println("Search parameters — name: " + name + ", surname: " + surname + ", email: " + email);
+            return userService.searchUsers(name, surname, email);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
     }
 
     private String augmentPrompt(String userQuestion, List<User> context) {
-        //TODO:
-        // - Stream context, call User::toDocument on each, join with "\n" into contextStr
-        // - Build augmented prompt by replacing {context} and {query} in USER_PROMPT
-        // - Print augmented prompt
-        // - Return augmented prompt
-        throw new TaskNotImplementedException();
+        String contextStr = context.stream().map(User::toDocument).collect(Collectors.joining("\n"));
+        String augmented = USER_PROMPT
+                .replace("{context}", contextStr)
+                .replace("{query}", userQuestion);
+        System.out.println(augmented);
+        return augmented;
     }
 
     private String generateAnswer(String augmentedPrompt) {
-        //TODO:
-        // - Build ChatCompletionCreateParams with GPT_4O_MINI, temperature=0.0, SYSTEM_PROMPT and augmentedPrompt
-        // - Call openAiClient.chat().completions().create(params)
-        // - Return content from completion.choices().get(0).message().content() (default to "" if absent)
-        throw new TaskNotImplementedException();
+        ChatCompletionCreateParams params = ChatCompletionCreateParams.builder()
+                .model(Constants.GPT_4O_MINI)
+                .temperature(0.0)
+                .addSystemMessage(SYSTEM_PROMPT)
+                .addUserMessage(augmentedPrompt)
+                .build();
+        return openAiClient.chat().completions().create(params)
+                .choices().getFirst().message().content().orElse("");
     }
 
     public static void main(String[] args) {
@@ -105,15 +141,17 @@ public class InputApiBasedGroundingApp {
             if (userQuestion.isEmpty()) continue;
             if (userQuestion.equalsIgnoreCase("quit") || userQuestion.equalsIgnoreCase("exit")) break;
 
-            //TODO:
-            // - Print "\n--- Retrieving context ---"
-            // - Call app.retrieveContext(userQuestion) and store in context
-            // - If context is not empty:
-            //   - Print "\n--- Augmenting prompt ---"
-            //   - Call app.augmentPrompt(userQuestion, context) and store in augmented
-            //   - Print "\n--- Generating answer ---"
-            //   - Call app.generateAnswer(augmented), print "\nAnswer: {answer}\n"
-            // - Otherwise: print "\n--- No relevant information found ---"
+            System.out.println("\n--- Retrieving context ---");
+            List<User> context = app.retrieveContext(userQuestion);
+            if (!context.isEmpty()) {
+                System.out.println("\n--- Augmenting prompt ---");
+                String augmented = app.augmentPrompt(userQuestion, context);
+                System.out.println("\n--- Generating answer ---");
+                String answer = app.generateAnswer(augmented);
+                System.out.println("\nAnswer: " + answer + "\n");
+            } else {
+                System.out.println("\n--- No relevant information found ---");
+            }
         }
     }
 }

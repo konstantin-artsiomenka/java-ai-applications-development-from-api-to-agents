@@ -18,29 +18,23 @@ import java.util.stream.Collectors;
 
 public class NoGroundingApp {
 
-    //TODO:
-    //  Define BATCH_SYSTEM_PROMPT - instructs the LLM to act as a user search assistant:
-    //    - Analyze the search criteria from the user question
-    //    - Examine each user in the provided list and determine if they match
-    //    - Return full details of matching users in their original format
-    //    - Return exactly "NO_MATCHES_FOUND" if no users match
     private static final String BATCH_SYSTEM_PROMPT = """
-            
+            You are a user search assistant.
+            - Carefully analyze the search criteria from the user's question.
+            - Examine each user in the provided list and determine if they match the criteria.
+            - Return the full details of all matching users in their original format.
+            - If no users match, return exactly: NO_MATCHES_FOUND
             """;
 
-    //TODO:
-    // Define FINAL_SYSTEM_PROMPT - instructs the LLM to compile final search results:
-    //   - Review all batch search results
-    //   - Combine and deduplicate matching users found across batches
-    //   - Present results in a clear, organized manner
     private static final String FINAL_SYSTEM_PROMPT = """
-            
+            You are a user search assistant compiling final search results.
+            - Review all batch search results provided.
+            - Combine and deduplicate matching users found across all batches.
+            - Present the final results in a clear, organized manner.
             """;
 
-    //TODO:
-    // Define USER_PROMPT template with two placeholders:
-    //   - {context} - the formatted user data
-    //   - {query}   - the user's search question
+    // ...existing code...
+
     private static final String USER_PROMPT = """
             ## USER DATA:
             {context}
@@ -62,31 +56,60 @@ public class NoGroundingApp {
 
     private String generateResponse(String systemPrompt, String userMessage) {
         System.out.println("Processing...");
-        //TODO:
-        // - Build ChatCompletionCreateParams with GPT_4_1_NANO, temperature=0.0, systemPrompt and userMessage
-        // - Call openAiClient.chat().completions().create(params)
-        // - Extract total tokens from completion.usage() (default to 0 if absent), add to totalTokens and batchTokens
-        // - Extract content string from completion.choices().get(0).message().content()
-        // - Print response content and token count
-        // - Return content string
-        throw new TaskNotImplementedException();
+        ChatCompletionCreateParams params = ChatCompletionCreateParams.builder()
+                .model(Constants.GPT_4_1_NANO)
+                .temperature(0.0)
+                .addSystemMessage(systemPrompt)
+                .addUserMessage(userMessage)
+                .build();
+        var completion = openAiClient.chat().completions().create(params);
+        int tokens = completion.usage().map(u -> (int) u.totalTokens()).orElse(0);
+        totalTokens.addAndGet(tokens);
+        batchTokens.add(tokens);
+        String content = completion.choices().get(0).message().content().orElse("");
+        System.out.println("Response: " + content);
+        System.out.println("Tokens used: " + tokens);
+        return content;
     }
 
     public void run(String userQuestion) {
-        //TODO:
-        // - Print "\n--- Searching user database ---"
-        // - Fetch all users via userService.getAllUsers()
-        // - Split users into batches of 100 using subList (loop with i += 100)
-        // - Build a list of CompletableFuture<String> tasks via supplyAsync: each calls generateResponse
-        //   with BATCH_SYSTEM_PROMPT and USER_PROMPT formatted using User::toDocument joined by "\n"
-        //   (replace {context} with retrieved context and {query} with userQuestion)
-        // - Wait for all futures with CompletableFuture.allOf(...).join(), then collect results
-        // - Print "\n--- Compiling results ---"
-        // - Filter batch results to keep only those where strip() is not "NO_MATCHES_FOUND"
-        // - Print "\n=== SEARCH RESULTS ==="
-        // - If relevant results exist: join with "\n\n" and call generateResponse with FINAL_SYSTEM_PROMPT
-        // - Otherwise: print "No users found" message and suggest refinement
-        // - Print "\n=== Performance ===" with total API calls (batchTokens.size()) and totalTokens
+        System.out.println("\n--- Searching user database ---");
+        List<User> allUsers = userService.getAllUsers();
+
+        List<CompletableFuture<String>> futures = new ArrayList<>();
+        for (int i = 0; i < allUsers.size(); i += 100) {
+            List<User> batch = allUsers.subList(i, Math.min(i + 100, allUsers.size()));
+            String context = batch.stream().map(User::toDocument).collect(Collectors.joining("\n"));
+            String userPrompt = USER_PROMPT
+                    .replace("{context}", context)
+                    .replace("{query}", userQuestion);
+            futures.add(CompletableFuture.supplyAsync(() -> generateResponse(BATCH_SYSTEM_PROMPT, userPrompt)));
+        }
+
+        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
+        List<String> batchResults = futures.stream()
+                .map(CompletableFuture::join)
+                .toList();
+
+        System.out.println("\n--- Compiling results ---");
+        List<String> relevantResults = batchResults.stream()
+                .filter(r -> !r.strip().equals("NO_MATCHES_FOUND"))
+                .toList();
+
+        System.out.println("\n=== SEARCH RESULTS ===");
+        if (!relevantResults.isEmpty()) {
+            String combinedContext = String.join("\n\n", relevantResults);
+            String finalPrompt = USER_PROMPT
+                    .replace("{context}", combinedContext)
+                    .replace("{query}", userQuestion);
+            generateResponse(FINAL_SYSTEM_PROMPT, finalPrompt);
+        } else {
+            System.out.println("No users found matching your criteria. Please try refining your search query.");
+        }
+
+        System.out.println("\n=== Performance ===");
+        System.out.println("Total API calls: " + batchTokens.size());
+        System.out.println("Total tokens used: " + totalTokens.get());
     }
 
     public static void main(String[] args) {
