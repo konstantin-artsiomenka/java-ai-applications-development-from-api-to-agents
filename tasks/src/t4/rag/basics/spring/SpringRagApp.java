@@ -25,103 +25,132 @@ import java.util.stream.Collectors;
 
 public class SpringRagApp {
 
-    private static final String SYSTEM_PROMPT = """
-            You are a RAG-powered assistant that assists users with their questions about microwave usage.
+  private static final String SYSTEM_PROMPT = """
+    You are a RAG-powered assistant that assists users with their questions about microwave usage.
+    
+    ## Structure of User message:
+    `RAG CONTEXT` - Retrieved documents relevant to the query.
+    `USER QUESTION` - The user's actual question.
+    
+    ## Instructions:
+    - Use information from `RAG CONTEXT` as context when answering the `USER QUESTION`.
+    - Cite specific sources when using information from the context.
+    - Answer ONLY based on conversation history and RAG context.
+    - If no relevant information exists in `RAG CONTEXT` or conversation history, state that you cannot answer the question.
+    """;
 
-            ## Structure of User message:
-            `RAG CONTEXT` - Retrieved documents relevant to the query.
-            `USER QUESTION` - The user's actual question.
+  private static final String USER_PROMPT_TEMPLATE =
+    "##RAG CONTEXT:\n{context}\n\n\n##USER QUESTION: \n{query}";
 
-            ## Instructions:
-            - Use information from `RAG CONTEXT` as context when answering the `USER QUESTION`.
-            - Cite specific sources when using information from the context.
-            - Answer ONLY based on conversation history and RAG context.
-            - If no relevant information exists in `RAG CONTEXT` or conversation history, state that you cannot answer the question.
-            """;
+  private static final String MANUAL_PATH = "tasks/src/t4/rag/basics/microwave_manual.txt";
+  private static final Path INDEX_PATH = Paths.get("tasks/src/t4/rag/basics/spring/microwave_index.json");
 
-    private static final String USER_PROMPT_TEMPLATE =
-            "##RAG CONTEXT:\n{context}\n\n\n##USER QUESTION: \n{query}";
+  private final OpenAiEmbeddingModel embeddingModel;
+  private final OpenAIClient openAiClient;
+  private final SimpleVectorStore vectorStore;
 
-    private static final String MANUAL_PATH = "tasks/src/t4/rag/basics/microwave_manual.txt";
-    private static final Path INDEX_PATH = Paths.get("tasks/src/t4/rag/basics/spring/microwave_index.json");
+  private SpringRagApp(OpenAiEmbeddingModel embeddingModel) {
+    this.embeddingModel = embeddingModel;
+    this.openAiClient = OpenAIOkHttpClient.builder()
+      .apiKey(Constants.OPENAI_API_KEY)
+      .build();
+    this.vectorStore = setupVectorStore();
+  }
 
-    private final OpenAiEmbeddingModel embeddingModel;
-    private final OpenAIClient openAiClient;
-    private final SimpleVectorStore vectorStore;
-
-    private SpringRagApp(OpenAiEmbeddingModel embeddingModel) {
-        this.embeddingModel = embeddingModel;
-        this.openAiClient = OpenAIOkHttpClient.builder()
-                .apiKey(Constants.OPENAI_API_KEY)
-                .build();
-        this.vectorStore = setupVectorStore();
+  private SimpleVectorStore setupVectorStore() {
+    System.out.println("=== Setting up Vector Store ===");
+    SimpleVectorStore store = SimpleVectorStore.builder(embeddingModel).build();
+    if (Files.exists(INDEX_PATH)) {
+      store.load(INDEX_PATH.toFile());
+      System.out.println("Index loaded from: " + INDEX_PATH);
+    } else {
+      populateStore(store);
     }
+    return store;
+  }
 
-    private SimpleVectorStore setupVectorStore() {
-        //TODO:
-        // - Print a startup message
-        // - Build a SimpleVectorStore using SimpleVectorStore.builder(embeddingModel).build() https://docs.spring.io/spring-ai/docs/current/api/org/springframework/ai/vectorstore/SimpleVectorStore.html
-        // - Check if INDEX_PATH already exists on disk
-        // - If yes: load the index using store.load(INDEX_PATH.toFile()) and print a confirmation message
-        // - If no: call populateStore(store)
-        // - Return the store
-        throw new TaskNotImplementedException();
-    }
+  private void populateStore(SimpleVectorStore store) {
+    System.out.println("Loading documents from: " + MANUAL_PATH);
+    List<Document> documents = new TextReader(new FileSystemResource(MANUAL_PATH)).get();
 
-    private void populateStore(SimpleVectorStore store) {
-        //TODO:
-        // - Print a loading message
-        // - Load documents using TextReader(new FileSystemResource(MANUAL_PATH)).get() https://docs.spring.io/spring-ai/reference/api/etl-pipeline.html#_text
-        // - Print a splitting message
-        // - Build a TokenTextSplitter (chunkSize=75, minChunkSizeChars=50, minChunkLengthToEmbed=5, maxNumChunks=10000, keepSeparator=true)
-        //   and split the documents https://docs.spring.io/spring-ai/reference/api/etl-pipeline.html#_using_the_builder_pattern
-        // - Print the number of chunks created
-        // - Print an embedding/indexing message
-        // - Add chunks to the store using store.add(chunks)
-        // - Save the index using store.save(INDEX_PATH.toFile())
-        // - Print saved and success messages
-    }
+    System.out.println("Splitting documents into chunks...");
+    List<Document> chunks = TokenTextSplitter.builder()
+      .withChunkSize(75)
+      .withMinChunkSizeChars(50)
+      .withMinChunkLengthToEmbed(5)
+      .withMaxNumChunks(10000)
+      .withKeepSeparator(true)
+      .build()
+      .apply(documents);
+    System.out.println("Created " + chunks.size() + " chunks.");
 
-    private String retrieveContext(String query, int k, double minScore) {
-        //TODO:
-        // - Print the RETRIEVAL step header
-        // - Print the query and search parameters (k, minScore)
-        // - Build a SearchRequest with query, topK(k), similarityThreshold(minScore)
-        // - Call vectorStore.similaritySearch(request)
-        // - Stream results: extract getText(), print score if present, collect content into a list
-        // - Return all collected parts joined with "\n\n"
-        throw new TaskNotImplementedException();
-    }
+    System.out.println("Embedding and indexing chunks...");
+    store.add(chunks);
+    store.save(INDEX_PATH.toFile());
+    System.out.println("Index saved to: " + INDEX_PATH);
+    System.out.println("Vector store populated successfully.");
+  }
 
-    private String augmentPrompt(String query, String context) {
-        //TODO:
-        // - Print the AUGMENTATION step header
-        // - Replace {context} and {query} placeholders in USER_PROMPT_TEMPLATE
-        // - Print the resulting augmented prompt
-        // - Return the formatted string
-        throw new TaskNotImplementedException();
-    }
+  private String retrieveContext(String query, int k, double minScore) {
+    System.out.println("\n=== RETRIEVAL ===");
+    System.out.println("Query: " + query + " | topK=" + k + " | minScore=" + minScore);
+    SearchRequest request = SearchRequest.builder()
+      .query(query)
+      .topK(k)
+      .similarityThreshold(minScore)
+      .build();
+    List<String> parts = vectorStore.similaritySearch(request).stream()
+      .peek(doc -> doc.getMetadata().entrySet().stream()
+        .filter(e -> e.getKey().equals("distance") || e.getKey().equals("score"))
+        .forEach(e -> System.out.println(
+          "  [score=" + e.getValue() + "] " + doc.getText().substring(0, Math.min(80, doc.getText().length()))
+            + "...")))
+      .map(Document::getText)
+      .collect(Collectors.toList());
+    return String.join("\n\n", parts);
+  }
 
-    private String generateAnswer(String augmentedPrompt) {
-        //TODO:
-        // - Print the GENERATION step header
-        // - Build ChatCompletionCreateParams with model, temperature(0.0), system message (SYSTEM_PROMPT), user message (augmentedPrompt)
-        // - Call openAiClient.chat().completions().create(params)
-        // - Extract the answer from choices[0].message().content()
-        // - Print the answer
-        // - Return the answer string
-        throw new TaskNotImplementedException();
-    }
+  private String augmentPrompt(String query, String context) {
+    System.out.println("\n=== AUGMENTATION ===");
+    String augmented = USER_PROMPT_TEMPLATE
+      .replace("{context}", context)
+      .replace("{query}", query);
+    System.out.println(augmented);
+    return augmented;
+  }
 
-    public static void main(String[] args) {
-        //TODO:
-        // - Instantiate SpringRagApp passing an OpenAiEmbeddingModel built with OpenAiApi (apiKey), MetadataMode.EMBED,
-        //   and OpenAiEmbeddingOptions (model="text-embedding-3-small") https://docs.spring.io/spring-ai/reference/api/embeddings/openai-embeddings.html#_manual_configuration
-        // - Print a welcome message
-        // - Create a Scanner and start an infinite loop reading user input
-        // - Skip blank lines
-        // - Step 1 (Retrieval):    call retrieveContext(query, 4, 0.3)
-        // - Step 2 (Augmentation): call augmentPrompt(query, context)
-        // - Step 3 (Generation):   call generateAnswer(augmented)
+  private String generateAnswer(String augmentedPrompt) {
+    System.out.println("\n=== GENERATION ===");
+    ChatCompletionCreateParams params = ChatCompletionCreateParams.builder()
+      .model(Constants.GPT_4O_MINI)
+      .temperature(0.0)
+      .addSystemMessage(SYSTEM_PROMPT)
+      .addUserMessage(augmentedPrompt)
+      .build();
+    String answer = openAiClient.chat().completions().create(params)
+      .choices().get(0).message().content().orElse("");
+    System.out.println(answer);
+    return answer;
+  }
+
+  public static void main(String[] args) {
+    OpenAiEmbeddingModel embeddingModel = new OpenAiEmbeddingModel(
+      OpenAiApi.builder().apiKey(Constants.OPENAI_API_KEY).build(),
+      MetadataMode.EMBED,
+      OpenAiEmbeddingOptions.builder().model("text-embedding-3-small").build()
+    );
+    SpringRagApp app = new SpringRagApp(embeddingModel);
+    System.out.println("\nWelcome to the Microwave Manual RAG Assistant! Type your question (Ctrl+C to exit).");
+    Scanner scanner = new Scanner(System.in);
+    while (true) {
+      System.out.print("\nYou: ");
+      String query = scanner.nextLine().trim();
+        if (query.isBlank()) {
+            continue;
+        }
+      String context = app.retrieveContext(query, 4, 0.3);
+      String augmented = app.augmentPrompt(query, context);
+      app.generateAnswer(augmented);
     }
+  }
 }

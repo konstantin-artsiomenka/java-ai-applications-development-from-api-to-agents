@@ -27,105 +27,128 @@ import java.util.Scanner;
 
 public class RagApp {
 
-    private static final String SYSTEM_PROMPT = """
-            You are a RAG-powered assistant that assists users with their questions about microwave usage.
+  private static final String SYSTEM_PROMPT = """
+    You are a RAG-powered assistant that assists users with their questions about microwave usage.
+    
+    ## Structure of User message:
+    `RAG CONTEXT` - Retrieved documents relevant to the query.
+    `USER QUESTION` - The user's actual question.
+    
+    ## Instructions:
+    - Use information from `RAG CONTEXT` as context when answering the `USER QUESTION`.
+    - Cite specific sources when using information from the context.
+    - Answer ONLY based on conversation history and RAG context.
+    - If no relevant information exists in `RAG CONTEXT` or conversation history, state that you cannot answer the question.
+    """;
 
-            ## Structure of User message:
-            `RAG CONTEXT` - Retrieved documents relevant to the query.
-            `USER QUESTION` - The user's actual question.
+  private static final String USER_PROMPT_TEMPLATE =
+    "##RAG CONTEXT:\n{context}\n\n\n##USER QUESTION: \n{query}";
 
-            ## Instructions:
-            - Use information from `RAG CONTEXT` as context when answering the `USER QUESTION`.
-            - Cite specific sources when using information from the context.
-            - Answer ONLY based on conversation history and RAG context.
-            - If no relevant information exists in `RAG CONTEXT` or conversation history, state that you cannot answer the question.
-            """;
+  private static final String MANUAL_PATH = "tasks/src/t4/rag/basics/microwave_manual.txt";
+  private static final Path INDEX_PATH = Paths.get("tasks/src/t4/rag/basics/langchain/microwave_index.json");
 
-    private static final String USER_PROMPT_TEMPLATE =
-            "##RAG CONTEXT:\n{context}\n\n\n##USER QUESTION: \n{query}";
+  private final EmbeddingModel embeddingModel;
+  private final OpenAIClient openAiClient;
+  private final EmbeddingStore<TextSegment> embeddingStore;
 
-    private static final String MANUAL_PATH = "tasks/src/t4/rag/basics/microwave_manual.txt";
-    private static final Path INDEX_PATH = Paths.get("tasks/src/t4/rag/basics/langchain/microwave_index.json");
+  private RagApp(EmbeddingModel embeddingModel) {
+    this.embeddingModel = embeddingModel;
+    this.openAiClient = OpenAIOkHttpClient.builder()
+      .apiKey(Constants.OPENAI_API_KEY)
+      .build();
+    this.embeddingStore = setupEmbeddingStore();
+  }
 
-    private final EmbeddingModel embeddingModel;
-    private final OpenAIClient openAiClient;
-    private final EmbeddingStore<TextSegment> embeddingStore;
-
-    private RagApp(EmbeddingModel embeddingModel) {
-        this.embeddingModel = embeddingModel;
-        this.openAiClient = OpenAIOkHttpClient.builder()
-                .apiKey(Constants.OPENAI_API_KEY)
-                .build();
-        this.embeddingStore = setupEmbeddingStore();
+  private EmbeddingStore<TextSegment> setupEmbeddingStore() {
+    System.out.println("=== Setting up Embedding Store ===");
+    if (Files.exists(INDEX_PATH)) {
+      InMemoryEmbeddingStore<TextSegment> store = InMemoryEmbeddingStore.fromFile(INDEX_PATH);
+      System.out.println("Index loaded from: " + INDEX_PATH);
+      return store;
     }
+    return createNewIndex();
+  }
 
-    private EmbeddingStore<TextSegment> setupEmbeddingStore() {
-        //TODO:
-        // - Print a startup message
-        // - Check if INDEX_PATH already exists on disk
-        // - If yes: load and return the store using InMemoryEmbeddingStore.fromFile(), print a confirmation message
-        //   https://github.com/langchain4j/langchain4j/blob/main/docs/docs/integrations/embedding-stores/1-in-memory.md
-        // - If no: call createNewIndex() and return its result
-        throw new TaskNotImplementedException();
-    }
+  private InMemoryEmbeddingStore<TextSegment> createNewIndex() {
+    System.out.println("Loading document from: " + MANUAL_PATH);
+    Document document = FileSystemDocumentLoader.loadDocument(MANUAL_PATH);
 
-    private InMemoryEmbeddingStore<TextSegment> createNewIndex() {
-        //TODO:
-        // - Print a loading message
-        // - Load the document from MANUAL_PATH using FileSystemDocumentLoader.loadDocument()
-        // - Print a splitting message
-        // - Split the document into chunks using DocumentSplitters.recursive(300, 50)
-        // - Print the number of chunks created
-        // - Print an embedding/indexing message
-        // - Create a new InMemoryEmbeddingStore<TextSegment>
-        // - Embed all segments using embeddingModel.embedAll(segments).content()
-        // - Add all embeddings and segments to the store using store.addAll()
-        // - Persist the store to INDEX_PATH using store.serializeToFile()
-        // - Print saved and success messages
-        // - Return the store
-        throw new TaskNotImplementedException();
-    }
+    System.out.println("Splitting document into chunks...");
+    List<TextSegment> segments = DocumentSplitters.recursive(300, 50).split(document);
+    System.out.println("Created " + segments.size() + " chunks.");
 
-    private String retrieveContext(String query, int k, double minScore) {
-        //TODO:
-        // - Print the RETRIEVAL step header
-        // - Print the query and search parameters (k, minScore)
-        // - Embed the query using embeddingModel.embed(query).content()
-        // - Build an EmbeddingSearchRequest with queryEmbedding, maxResults(k), minScore
-        // - Search the embeddingStore using embeddingStore.search(request)
-        // - Iterate over matches: collect each TextSegment content, print relevance score and content
-        // - Return all collected parts joined with "\n\n"
-        throw new TaskNotImplementedException();
-    }
+    System.out.println("Embedding and indexing chunks...");
+    InMemoryEmbeddingStore<TextSegment> store = new InMemoryEmbeddingStore<>();
+    List<Embedding> embeddings = embeddingModel.embedAll(segments).content();
+    store.addAll(embeddings, segments);
 
-    private String augmentPrompt(String query, String context) {
-        //TODO:
-        // - Print the AUGMENTATION step header
-        // - Replace {context} and {query} placeholders in USER_PROMPT_TEMPLATE
-        // - Print the resulting augmented prompt
-        // - Return the formatted string
-        throw new TaskNotImplementedException();
-    }
+    store.serializeToFile(INDEX_PATH);
+    System.out.println("Index saved to: " + INDEX_PATH);
+    System.out.println("Embedding store populated successfully.");
+    return store;
+  }
 
-    private String generateAnswer(String augmentedPrompt) {
-        //TODO:
-        // - Print the GENERATION step header
-        // - Build ChatCompletionCreateParams with model, temperature(0.0), system message (SYSTEM_PROMPT), user message (augmentedPrompt)
-        // - Call openAiClient.chat().completions().create(params)
-        // - Extract the answer from choices[0].message().content()
-        // - Print the answer
-        // - Return the answer string
-        throw new TaskNotImplementedException();
+  private String retrieveContext(String query, int k, double minScore) {
+    System.out.println("\n=== RETRIEVAL ===");
+    System.out.println("Query: " + query + " | maxResults=" + k + " | minScore=" + minScore);
+    Embedding queryEmbedding = embeddingModel.embed(query).content();
+    EmbeddingSearchRequest request = EmbeddingSearchRequest.builder()
+      .queryEmbedding(queryEmbedding)
+      .maxResults(k)
+      .minScore(minScore)
+      .build();
+    EmbeddingSearchResult<TextSegment> result = embeddingStore.search(request);
+    List<String> parts = new ArrayList<>();
+    for (EmbeddingMatch<TextSegment> match : result.matches()) {
+      String content = match.embedded().text();
+      System.out.println(
+        "  [score=" + match.score() + "] " + content.substring(0, Math.min(80, content.length())) + "...");
+      parts.add(content);
     }
+    return String.join("\n\n", parts);
+  }
 
-    public static void main(String[] args) {
-        //TODO:
-        // - Instantiate RagApp passing an OpenAiEmbeddingModel built with apiKey and modelName "text-embedding-3-small"
-        // - Print a welcome message
-        // - Create a Scanner and start an infinite loop reading user input
-        // - Skip blank lines
-        // - Step 1 (Retrieval):   call retrieveContext(query, 4, 0.7)
-        // - Step 2 (Augmentation): call augmentPrompt(query, context)
-        // - Step 3 (Generation):  call generateAnswer(augmented)
+  private String augmentPrompt(String query, String context) {
+    System.out.println("\n=== AUGMENTATION ===");
+    String augmented = USER_PROMPT_TEMPLATE
+      .replace("{context}", context)
+      .replace("{query}", query);
+    System.out.println(augmented);
+    return augmented;
+  }
+
+  private String generateAnswer(String augmentedPrompt) {
+    System.out.println("\n=== GENERATION ===");
+    ChatCompletionCreateParams params = ChatCompletionCreateParams.builder()
+      .model(Constants.GPT_4O_MINI)
+      .temperature(0.0)
+      .addSystemMessage(SYSTEM_PROMPT)
+      .addUserMessage(augmentedPrompt)
+      .build();
+    String answer = openAiClient.chat().completions().create(params)
+      .choices().getFirst().message().content().orElse("");
+    System.out.println(answer);
+    return answer;
+  }
+
+  public static void main(String[] args) {
+    RagApp app = new RagApp(
+      OpenAiEmbeddingModel.builder()
+        .apiKey(Constants.OPENAI_API_KEY)
+        .modelName("text-embedding-3-small")
+        .build()
+    );
+    System.out.println("\nWelcome to the Microwave Manual RAG Assistant! Type your question (Ctrl+C to exit).");
+    Scanner scanner = new Scanner(System.in);
+    while (true) {
+      System.out.print("\nYou: ");
+      String query = scanner.nextLine().trim();
+        if (query.isBlank()) {
+            continue;
+        }
+      String context = app.retrieveContext(query, 4, 0.7);
+      String augmented = app.augmentPrompt(query, context);
+      app.generateAnswer(augmented);
     }
+  }
 }
