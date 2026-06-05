@@ -46,14 +46,31 @@ public class EmbeddingsClient {
      * Returns Map: inputs[0] -> [0][embedding], inputs[1] -> [1][embedding], ...
      */
     public Map<Integer, List<Float>> getEmbeddings(List<String> inputs, int dimensions) {
-        //TODO:
-        // - https://developers.openai.com/api/reference/resources/embeddings/methods/create
-        // - build JSON request body with "model", "input" (inputs list), "dimensions"
-        // - set Authorization and Content-Type headers, POST to endpoint via httpClient
-        // - on HTTP 200: parse response JSON, extract "data" array, return indexed embeddings via fromData()
-        // - on non-200: throw RuntimeException with status code and response body
-        // - wrap checked exceptions in RuntimeException
-        throw new TaskNotImplementedException();
+        try {
+            Map<String, Object> body = new HashMap<>();
+            body.put("model", modelName);
+            body.put("input", inputs);
+            body.put("dimensions", dimensions);
+
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(endpoint))
+                    .header("Authorization", apiKey)
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(body)))
+                    .build();
+
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() != 200) {
+                throw new RuntimeException("Request failed with status " + response.statusCode() + ": " + response.body());
+            }
+
+            JsonNode data = objectMapper.readTree(response.body()).get("data");
+            return fromData(data);
+        } catch (RuntimeException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
     }
 
     private Map<Integer, List<Float>> fromData(JsonNode data) {
