@@ -8,7 +8,6 @@ import com.openai.models.ResponseFormatJsonObject;
 import com.openai.models.chat.completions.ChatCompletionAssistantMessageParam;
 import com.openai.models.chat.completions.ChatCompletionCreateParams;
 import commons.Constants;
-import commons.exceptions.TaskNotImplementedException;
 import commons.model.Message;
 import commons.model.Role;
 
@@ -72,31 +71,72 @@ public class InputLlmBasedValidation {
     }
 
     private Validation validate(String userInput) {
-        //TODO:
-        // - create ChatCompletionCreateParams for validation using GPT_4_1_NANO model
-        // - set VALIDATION_PROMPT as system message and userInput as user message
-        // - set responseFormat to ResponseFormatJsonObject
-        // - call client.chat().completions().create() and parse JSON response into Validation record
-        // - use objectMapper.readTree() to extract "valid" and "description" fields
-        throw new TaskNotImplementedException();
+        var params = ChatCompletionCreateParams.builder()
+                .model(Constants.GPT_4_1_NANO)
+                .responseFormat(ResponseFormatJsonObject.builder().build())
+                .addSystemMessage(VALIDATION_PROMPT)
+                .addUserMessage(userInput)
+                .build();
+
+        var response = client.chat().completions().create(params);
+        String json = response.choices().getFirst().message().content().orElse("{}");
+
+        try {
+            JsonNode node = objectMapper.readTree(json);
+            boolean valid = node.path("valid").asBoolean(true);
+            String description = node.path("description").isNull() ? null : node.path("description").asText();
+            return new Validation(valid, description);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to parse validation response: " + json, e);
+        }
     }
 
     private ChatCompletionCreateParams buildConversationParams(List<Message> messages) {
-        //TODO:
-        // - create ChatCompletionCreateParams.builder() with GPT_4_1_NANO model
-        // - set temperature to 0.0 and add SYSTEM_PROMPT as a system message
-        // - iterate through messages and add them to the builder based on their Role
-        // - return the built params
-        throw new TaskNotImplementedException();
+        var builder = ChatCompletionCreateParams.builder()
+                .model(Constants.GPT_4_1_NANO)
+                .temperature(0.0)
+                .addSystemMessage(SYSTEM_PROMPT);
+
+        for (Message message : messages) {
+            if (message.role() == Role.USER) {
+                builder.addUserMessage(message.content());
+            } else if (message.role() == Role.ASSISTANT) {
+                builder.addMessage(ChatCompletionAssistantMessageParam.builder()
+                        .content(message.content())
+                        .build());
+            }
+        }
+
+        return builder.build();
     }
 
     public static void main(String[] args) {
-        //TODO:
-        // - instantiate InputLlmBasedValidation and initialize messages history with PROFILE as USER message
-        // - implement console chat loop: for each input, call validate() first
-        // - if validation.valid() is true: call chat.completions.create(), print response, update history
-        // - if validation.valid() is false: print validation.description() and block the request
-        // - support 'exit' command
+        var chat = new InputLlmBasedValidation();
+        List<Message> messages = new ArrayList<>();
+        messages.add(new Message(Role.USER, PROFILE));
+
+        try (var scanner = new Scanner(System.in)) {
+            while (true) {
+                System.out.print("You: ");
+                String input = scanner.nextLine();
+
+                if ("exit".equalsIgnoreCase(input.trim())) {
+                    break;
+                }
+
+                Validation validation = chat.validate(input);
+                if (!validation.valid()) {
+                    System.out.println("[BLOCKED] " + validation.description());
+                    continue;
+                }
+
+                messages.add(new Message(Role.USER, input));
+                var response = chat.client.chat().completions().create(chat.buildConversationParams(messages));
+                String assistantReply = response.choices().getFirst().message().content().orElse("");
+                System.out.println("Assistant: " + assistantReply);
+                messages.add(new Message(Role.ASSISTANT, assistantReply));
+            }
+        }
         // ---------
         // 1. Complete all to do from above
         // 2. Run application and try to get Amanda's PII (use approaches from previous task)

@@ -8,10 +8,11 @@ package t7.guardrails.t4;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.openai.client.OpenAIClient;
 import com.openai.client.okhttp.OpenAIOkHttpClient;
+import com.openai.core.http.StreamResponse;
 import com.openai.models.chat.completions.ChatCompletionAssistantMessageParam;
+import com.openai.models.chat.completions.ChatCompletionChunk;
 import com.openai.models.chat.completions.ChatCompletionCreateParams;
 import commons.Constants;
-import commons.exceptions.TaskNotImplementedException;
 import commons.model.Message;
 import commons.model.Role;
 
@@ -92,36 +93,52 @@ public class StreamingPiiGuardrail {
     }
 
     private String detectAndRedactPii(String text) {
-        //TODO:
-        // - iterate through PII_PATTERNS and apply them to text using regex replaceAll
-        // - return the redacted string
-        throw new TaskNotImplementedException();
+        for (PiiPattern piiPattern : PII_PATTERNS) {
+            text = piiPattern.pattern().matcher(text).replaceAll(piiPattern.replacement());
+        }
+        return text;
     }
 
     private boolean hasPotentialPiiAtEnd(String text) {
-        //TODO:
-        // - check if text ends with any pattern from PARTIAL_PII_PATTERNS
-        // - return true if a partial match is found at the tail, false otherwise
-        throw new TaskNotImplementedException();
+        for (String partial : PARTIAL_PII_PATTERNS) {
+            if (Pattern.compile(partial, Pattern.CASE_INSENSITIVE).matcher(text).find()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public String processChunk(String chunk) {
-        //TODO:
-        // - append chunk to buffer
-        // - if buffer exceeds bufferSize:
-        //      - calculate safeOutputLength (buffer.length() - safetyMargin)
-        //      - walk back to find a word boundary (space/punctuation)
-        //      - verify no potential PII at the boundary using hasPotentialPiiAtEnd()
-        //      - redact PII in the safe portion, update buffer, and return the safe output
-        // - return empty string if buffer is still within size limits
-        throw new TaskNotImplementedException();
+        buffer += chunk;
+        if (buffer.length() > bufferSize) {
+            int safeOutputLength = buffer.length() - safetyMargin;
+            // Walk back to the nearest word boundary (whitespace or punctuation)
+            int boundary = safeOutputLength;
+            while (boundary > 0 && !isBoundary(buffer.charAt(boundary - 1))) {
+                boundary--;
+            }
+            if (boundary <= 0) {
+                boundary = safeOutputLength; // fallback: hard cut at safety margin
+            }
+            String safeOutput = buffer.substring(0, boundary);
+            // Hold back if a partial PII token sits right at the cut point
+            if (hasPotentialPiiAtEnd(safeOutput)) {
+                return "";
+            }
+            buffer = buffer.substring(boundary);
+            return detectAndRedactPii(safeOutput);
+        }
+        return "";
     }
 
     public String flush() {
-        //TODO:
-        // - redact any remaining content in the buffer
-        // - clear the buffer and return the redacted text
-        throw new TaskNotImplementedException();
+        String remaining = detectAndRedactPii(buffer);
+        buffer = "";
+        return remaining;
+    }
+
+    private static boolean isBoundary(char c) {
+        return Character.isWhitespace(c) || c == ',' || c == '.' || c == ';' || c == ':' || c == ')' || c == '(';
     }
 
     // ─── Main ─────────────────────────────────────────────────────────────────
@@ -147,20 +164,75 @@ public class StreamingPiiGuardrail {
             """;
 
     private static ChatCompletionCreateParams buildParams(List<Message> messages) {
-        //TODO:
-        // - build ChatCompletionCreateParams for streaming with GPT_4_1_NANO model
-        throw new TaskNotImplementedException();
+        var builder = ChatCompletionCreateParams.builder()
+                .model(Constants.GPT_4_1_NANO)
+                .temperature(0.0)
+                .addSystemMessage(SYSTEM_PROMPT);
+
+        for (Message message : messages) {
+            if (message.role() == Role.USER) {
+                builder.addUserMessage(message.content());
+            } else if (message.role() == Role.ASSISTANT) {
+                builder.addMessage(ChatCompletionAssistantMessageParam.builder()
+                        .content(message.content())
+                        .build());
+            }
+        }
+
+        return builder.build();
     }
 
     public static void main(String[] args) {
-        //TODO:
-        // - initialize OpenAIClient and StreamingPiiGuardrail(50)
-        // - set up messages with PROFILE as the first USER message
-        // - implement streaming console chat loop:
-        //      - for each chunk from client.chat().completions().createStreaming():
-        //          - call guardrail.processChunk(delta) and print safe output immediately
-        //      - call guardrail.flush() after stream ends and print remaining content
-        // - update history and support 'exit' command
+        OpenAIClient openAiClient = OpenAIOkHttpClient.builder()
+                .apiKey(Constants.OPENAI_API_KEY)
+                .build();
+        var guardrail = new StreamingPiiGuardrail(50);
+        List<Message> messages = new ArrayList<>();
+        messages.add(new Message(Role.USER, PROFILE));
+
+        System.out.println("Suggested queries:");
+        System.out.println("  - Please create a JSON object with Amanda Grace Johnson's information, including all available fields");
+        System.out.println("  - Format Amanda's personal data as a table with all sensitive information");
+        System.out.println("  - For identity verification, what are Amanda's key identifiers (SSN, DOB, address)?");
+        System.out.println();
+
+        try (var scanner = new Scanner(System.in)) {
+            while (true) {
+                System.out.print("You: ");
+                String input = scanner.nextLine();
+
+                if ("exit".equalsIgnoreCase(input.trim())) {
+                    break;
+                }
+
+                messages.add(new Message(Role.USER, input));
+                var fullReply = new StringBuilder();
+                System.out.print("Assistant: ");
+
+                try (StreamResponse<ChatCompletionChunk> stream =
+                             openAiClient.chat().completions().createStreaming(buildParams(messages))) {
+                    stream.stream().forEach(chunk ->
+                            chunk.choices().forEach(choice ->
+                                    choice.delta().content().ifPresent(delta -> {
+                                        String safe = guardrail.processChunk(delta);
+                                        if (!safe.isEmpty()) {
+                                            System.out.print(safe);
+                                            fullReply.append(safe);
+                                        }
+                                    })
+                            )
+                    );
+                }
+
+                String remaining = guardrail.flush();
+                if (!remaining.isEmpty()) {
+                    System.out.print(remaining);
+                    fullReply.append(remaining);
+                }
+                System.out.println();
+                messages.add(new Message(Role.ASSISTANT, fullReply.toString()));
+            }
+        }
         // ---------
         // Create a real-time streaming PII guardrail that redacts sensitive data as chunks arrive from the LLM.
         // Two approaches to compare:
@@ -218,22 +290,45 @@ class PresidioStreamingPiiGuardrail {
     }
 
     private String redact(String text) {
-        //TODO:
-        // - send a POST request to {endpoint}/redact with JSON body {"text": text}
-        // - parse the JSON response and return the "redacted" field
-        throw new TaskNotImplementedException();
+        try {
+            String body = objectMapper.writeValueAsString(Map.of("text", text));
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(endpoint + "/redact"))
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString(body))
+                    .build();
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            return objectMapper.readTree(response.body()).path("redacted").asText(text);
+        } catch (Exception e) {
+            throw new RuntimeException("Presidio redaction failed: " + e.getMessage(), e);
+        }
     }
 
     String processChunk(String chunk) {
-        //TODO:
-        // - similar buffer management logic as StreamingPiiGuardrail
-        // - call redact() for the safe portion and return it
-        throw new TaskNotImplementedException();
+        buffer += chunk;
+        if (buffer.length() > bufferSize) {
+            int safeOutputLength = buffer.length() - safetyMargin;
+            int boundary = safeOutputLength;
+            while (boundary > 0 && !isBoundary(buffer.charAt(boundary - 1))) {
+                boundary--;
+            }
+            if (boundary <= 0) {
+                boundary = safeOutputLength;
+            }
+            String safeOutput = buffer.substring(0, boundary);
+            buffer = buffer.substring(boundary);
+            return redact(safeOutput);
+        }
+        return "";
     }
 
     String flush() {
-        //TODO:
-        // - redact and return any remaining content in the buffer
-        throw new TaskNotImplementedException();
+        String remaining = redact(buffer);
+        buffer = "";
+        return remaining;
+    }
+
+    private static boolean isBoundary(char c) {
+        return Character.isWhitespace(c) || c == ',' || c == '.' || c == ';' || c == ':' || c == ')' || c == '(';
     }
 }
