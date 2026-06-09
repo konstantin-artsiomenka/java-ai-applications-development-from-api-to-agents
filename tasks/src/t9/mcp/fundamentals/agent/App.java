@@ -22,10 +22,20 @@ public class App {
     public static void main(String[] args) throws Exception {
         // Switch active client by commenting/uncommenting:
 
-        String javaClasspath = System.getProperty("java.class.path");
+//        String javaClasspath = System.getProperty("java.class.path");
+//
+//        // --- HTTP client (start HttpServer.java first): ---
+//        try (BaseClient mcpClient = new HttpClient("http://localhost:8005/mcp")) {
+//            runAgent(mcpClient);
+//        }
 
-        // --- HTTP client (start HttpServer.java first): ---
-        try (BaseClient mcpClient = new HttpClient("http://localhost:8005/mcp")) {
+        String javaClasspath = System.getProperty("java.class.path");
+        try (BaseClient mcpClient = new StdioClient(
+          null,
+          "java",
+          List.of("-cp", javaClasspath, "t9.mcp.fundamentals.mcp.server.StdioServerApp"),
+          null
+        )) {
             runAgent(mcpClient);
         }
 

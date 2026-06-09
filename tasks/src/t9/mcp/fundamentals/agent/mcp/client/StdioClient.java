@@ -1,6 +1,5 @@
 package t9.mcp.fundamentals.agent.mcp.client;
 
-import commons.exceptions.TaskNotImplementedException;
 import io.modelcontextprotocol.client.McpClient;
 import io.modelcontextprotocol.client.transport.ServerParameters;
 import io.modelcontextprotocol.client.transport.StdioClientTransport;
@@ -42,27 +41,40 @@ public class StdioClient extends BaseClient {
 
     @Override
     public void connect() {
-        //TODO:
-        // - call buildServerParameters() to get ServerParameters
-        // - print startupMessage()
-        // - create StdioClientTransport(params, new JacksonMcpJsonMapper(objectMapper))
-        // - create McpClient.sync(transport).build() and assign to mcpClient
-        // - print "Initializing MCP session...", call mcpClient.initialize() then initToolCallbackProvider()
-        // - print "MCP session initialized."
+        ServerParameters params = buildServerParameters();
+        System.out.println(startupMessage());
+
+        StdioClientTransport transport = new StdioClientTransport(
+                params,
+                new JacksonMcpJsonMapper(objectMapper)
+        );
+
+        mcpClient = McpClient.sync(transport).build();
+
+        System.out.println("Initializing MCP session...");
+        mcpClient.initialize();
+        initToolCallbackProvider();
+        System.out.println("MCP session initialized.");
     }
 
     private ServerParameters buildServerParameters() {
-        //TODO:
-        // - if dockerImage != null: build ServerParameters with "docker" command and args ["run", "--rm", "-i", dockerImage]
-        // - else: build ServerParameters with command and args.toArray(new String[0])
-        // - include env in both cases via .env(env)
-        throw new TaskNotImplementedException();
+        if (dockerImage != null) {
+            return ServerParameters.builder("docker")
+                    .args("run", "--rm", "-i", dockerImage)
+                    .env(env)
+                    .build();
+        }
+        return ServerParameters.builder(command)
+                .args(args.toArray(new String[0]))
+                .env(env)
+                .build();
     }
 
     private String startupMessage() {
-        //TODO:
-        // - if dockerImage != null: return message with image name and docker ps inspection tip
-        // - else: return message with command + joined args
-        throw new TaskNotImplementedException();
+        if (dockerImage != null) {
+            return "Starting Docker MCP server with image: " + dockerImage +
+                   " (inspect with: docker ps)";
+        }
+        return "Starting local MCP server: " + command + " " + String.join(" ", args);
     }
 }

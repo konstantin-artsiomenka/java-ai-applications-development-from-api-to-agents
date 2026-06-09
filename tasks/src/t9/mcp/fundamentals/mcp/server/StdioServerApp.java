@@ -11,13 +11,15 @@ import java.util.Map;
 public class StdioServerApp {
 
     public static void main(String[] args) {
-        // https://docs.spring.io/spring-ai/reference/api/mcp/mcp-server-boot-starter-docs.html
-        //TODO:
-        // - create SpringApplication with StdioServerApp.class
-        // - set banner mode OFF (Banner.Mode.OFF) and WebApplicationType.NONE
-        // - set spring.ai.mcp.server.stdio=true (activates STDIO transport, not the protocol enum)
-        // - set spring.ai.mcp.server.name, version
-        // - disable all logging (logging.level.root=OFF) — stdout is exclusive to MCP JSON-RPC
-        // - run the app
+        SpringApplication app = new SpringApplication(StdioServerApp.class);
+        app.setBannerMode(Banner.Mode.OFF);
+        app.setWebApplicationType(WebApplicationType.NONE);
+        app.setDefaultProperties(Map.of(
+                "spring.ai.mcp.server.stdio", "true",
+                "spring.ai.mcp.server.name", "ums-mcp-server",
+                "spring.ai.mcp.server.version", "1.0.0",
+                "logging.level.root", "OFF"
+        ));
+        app.run(args);
     }
 }
