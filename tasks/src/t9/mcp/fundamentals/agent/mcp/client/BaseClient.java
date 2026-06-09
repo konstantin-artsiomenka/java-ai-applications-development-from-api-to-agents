@@ -1,6 +1,5 @@
 package t9.mcp.fundamentals.agent.mcp.client;
 
-import commons.exceptions.TaskNotImplementedException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.modelcontextprotocol.client.McpSyncClient;
 import io.modelcontextprotocol.spec.McpSchema;
@@ -20,68 +19,106 @@ public abstract class BaseClient implements AutoCloseable {
 
     public abstract void connect();
 
-    /**
-     * Must be called by subclasses in {@link #connect()} after {@code mcpClient.initialize()}.
-     * Fetches available tools from the MCP server and caches them as Spring AI {@link ToolCallback}s.
-     */
     protected void initToolCallbackProvider() {
-        //TODO:
-        // - create SyncMcpToolCallbackProvider.builder().addMcpClient(mcpClient).build()
-        // - assign provider.getToolCallbacks() to this.toolCallbacks
+        SyncMcpToolCallbackProvider provider = SyncMcpToolCallbackProvider.builder()
+                .addMcpClient(mcpClient)
+                .build();
+        this.toolCallbacks = provider.getToolCallbacks();
     }
 
     public List<Map<String, Object>> getTools() {
-        //TODO:
-        // - iterate toolCallbacks; for each get ToolDefinition via cb.getToolDefinition()
-        // - parse def.inputSchema() to Map via objectMapper.readValue()
-        // - build Map with type="function" and nested "function" map (name, description, parameters)
-        // - collect into result list and return
-        throw new TaskNotImplementedException();
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (ToolCallback cb : toolCallbacks) {
+            var def = cb.getToolDefinition();
+            try {
+              def.description();
+              Map<String, Object> tool = Map.of(
+                        "type", "function",
+                        "function", Map.of(
+                                "name", def.name(),
+                                "description", def.description(),
+                                "parameters", objectMapper.readValue(def.inputSchema(), Map.class)
+                        )
+                );
+                result.add(tool);
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        }
+        return result;
     }
 
     public String callTool(String toolName, Map<String, Object> toolArgs) {
-        //TODO:
-        // - print tool invocation message with toolName and toolArgs
-        // - find ToolCallback matching toolName in toolCallbacks; throw if not found
-        // - call callback.call(objectMapper.writeValueAsString(toolArgs))
-        // - print and return result; wrap exceptions in RuntimeException
-        throw new TaskNotImplementedException();
+        System.out.println("    🔧 Calling `" + toolName + "` with " + toolArgs);
+
+        ToolCallback callback = Arrays.stream(toolCallbacks)
+                .filter(cb -> cb.getToolDefinition().name().equals(toolName))
+                .findFirst()
+                .orElseThrow(() -> new RuntimeException("Tool not found: " + toolName));
+
+        try {
+            String result = callback.call(objectMapper.writeValueAsString(toolArgs));
+            System.out.println("    ⚙️: " + result + "\n");
+            return result;
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to call tool '" + toolName + "': " + e.getMessage(), e);
+        }
     }
 
     public List<McpSchema.Resource> getResources() {
-        //TODO:
-        // - call mcpClient.listResources().resources()
-        // - catch exceptions: print warning message and return empty list
-        throw new TaskNotImplementedException();
+        try {
+            return mcpClient.listResources().resources();
+        } catch (Exception e) {
+            System.out.println("Server doesn't support list_resources: " + e.getMessage());
+            return new ArrayList<>();
+        }
     }
 
     public String getResource(String uri) {
-        //TODO:
-        // - call mcpClient.readResource(new McpSchema.ReadResourceRequest(uri))
-        // - return "" if contents null or empty
-        // - handle TextResourceContents and BlobResourceContents; return contents as string
-        throw new TaskNotImplementedException();
+        McpSchema.ReadResourceResult result = mcpClient.readResource(
+                new McpSchema.ReadResourceRequest(uri)
+        );
+        if (result.contents() == null || result.contents().isEmpty()) {
+            return "";
+        }
+        McpSchema.ResourceContents contents = result.contents().get(0);
+        if (contents instanceof McpSchema.TextResourceContents tc) {
+            return tc.text();
+        } else if (contents instanceof McpSchema.BlobResourceContents bc) {
+            return bc.blob();
+        }
+        return contents.toString();
     }
 
     public List<McpSchema.Prompt> getPrompts() {
-        //TODO:
-        // - call mcpClient.listPrompts().prompts()
-        // - catch exceptions: print warning message and return empty list
-        throw new TaskNotImplementedException();
+        try {
+            return mcpClient.listPrompts().prompts();
+        } catch (Exception e) {
+            System.out.println("Server doesn't support list_prompts: " + e.getMessage());
+            return new ArrayList<>();
+        }
     }
 
     public String getPrompt(String name) {
-        //TODO:
-        // - call mcpClient.getPrompt(new McpSchema.GetPromptRequest(name, null))
-        // - return "" if messages null or empty
-        // - for each PromptMessage with TextContent, append tc.text() to StringBuilder
-        // - return combined.toString().strip()
-        throw new TaskNotImplementedException();
+        McpSchema.GetPromptResult result = mcpClient.getPrompt(
+                new McpSchema.GetPromptRequest(name, null)
+        );
+        if (result.messages() == null || result.messages().isEmpty()) {
+            return "";
+        }
+        StringBuilder combined = new StringBuilder();
+        for (McpSchema.PromptMessage msg : result.messages()) {
+            if (msg.content() instanceof McpSchema.TextContent tc) {
+                combined.append(tc.text()).append("\n");
+            }
+        }
+        return combined.toString().strip();
     }
 
     @Override
     public void close() {
-        //TODO:
-        // - if mcpClient != null, call mcpClient.closeGracefully()
+        if (mcpClient != null) {
+            mcpClient.closeGracefully();
+        }
     }
 }

@@ -9,20 +9,19 @@ import java.util.Map;
 public class HttpServerApp {
 
     public static void main(String[] args) {
-        // https://docs.spring.io/spring-ai/reference/api/mcp/mcp-server-boot-starter-docs.html
-        //TODO:
-        // - create SpringApplication with HttpServerApp.class
-        // - set default properties:
-        //      - server.port=8005
-        //      - spring.ai.mcp.server.name
-        //      - version
-        //      - protocol=STREAMABLE
-        //      - logging.level.io.modelcontextprotocol=DEBUG
-        //      - ogging.level.org.springaicommunity.mcp=DEBUG
-        //      - logging.level.t9.mcp.fundamentals=INFO
-        //      - spring.autoconfigure.exclude
-        //      - org.springframework.boot.autoconfigure.security.servlet.SecurityAutoConfiguration
-        //      - org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration
-        // - run the app
+        SpringApplication app = new SpringApplication(HttpServerApp.class);
+        app.setDefaultProperties(Map.of(
+                "server.port", "8005",
+                "spring.ai.mcp.server.name", "ums-mcp-server",
+                "spring.ai.mcp.server.version", "1.0.0",
+                "spring.ai.mcp.server.protocol", "STREAMABLE",
+                "logging.level.io.modelcontextprotocol", "DEBUG",
+                "logging.level.org.springaicommunity.mcp", "DEBUG",
+                "logging.level.t9.mcp.fundamentals", "INFO",
+                "spring.autoconfigure.exclude",
+                        "org.springframework.boot.autoconfigure.security.servlet.SecurityAutoConfiguration," +
+                        "org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration"
+        ));
+        app.run(args);
     }
 }

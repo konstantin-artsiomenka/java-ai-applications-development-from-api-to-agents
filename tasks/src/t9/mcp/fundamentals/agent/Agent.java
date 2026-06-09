@@ -92,11 +92,26 @@ public class Agent {
 
     @SuppressWarnings("unchecked")
     private void processToolCalls(List<ChatCompletionMessageToolCall> toolCalls, List<ChatCompletionMessageParam> messages) {
-        //TODO:
-        // - iterate toolCalls; for each extract toolCallId, functionName, argumentsJson from toolCall.function()
-        // - deserialize argumentsJson to Map<String, Object> using objectMapper.readValue()
-        // - call mcpClient.callTool(functionName, arguments); on exception build error message string
-        // - add result as ChatCompletionMessageParam.ofTool() with toolCallId and content
+        for (ChatCompletionMessageToolCall toolCall : toolCalls) {
+            String toolCallId = toolCall.id();
+            String functionName = toolCall.function().name();
+            String argumentsJson = toolCall.function().arguments();
+
+            String result;
+            try {
+                Map<String, Object> arguments = objectMapper.readValue(argumentsJson, Map.class);
+                result = mcpClient.callTool(functionName, arguments);
+            } catch (Exception e) {
+                result = "Error calling tool '" + functionName + "': " + e.getMessage();
+            }
+
+            messages.add(ChatCompletionMessageParam.ofTool(
+                    ChatCompletionToolMessageParam.builder()
+                            .toolCallId(toolCallId)
+                            .content(result)
+                            .build()
+            ));
+        }
     }
 
     @SuppressWarnings("unchecked")

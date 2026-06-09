@@ -14,12 +14,21 @@ public class HttpClient extends BaseClient {
 
     @Override
     public void connect() {
-        // https://java.sdk.modelcontextprotocol.io/latest/client/#streamable-http
-        //TODO:
-        // - split mcpServerUrl into baseUrl (before last '/') and endpoint (last path segment)
-        // - build HttpClientStreamableHttpTransport with baseUrl, endpoint, JacksonMcpJsonMapper(objectMapper)
-        // - create McpClient.sync(transport).build() and assign to mcpClient
-        // - print connection start message, call mcpClient.initialize() then initToolCallbackProvider()
-        // - print connected message
+        int lastSlash = mcpServerUrl.lastIndexOf('/');
+        String baseUrl = lastSlash > 7 ? mcpServerUrl.substring(0, lastSlash) : mcpServerUrl;
+        String endpoint = lastSlash > 7 ? mcpServerUrl.substring(lastSlash) : "/mcp";
+
+        HttpClientStreamableHttpTransport transport = HttpClientStreamableHttpTransport
+                .builder(baseUrl)
+                .endpoint(endpoint)
+                .jsonMapper(new JacksonMcpJsonMapper(objectMapper))
+                .build();
+
+        mcpClient = McpClient.sync(transport).build();
+
+        System.out.println("Connecting to HTTP MCP Server at " + mcpServerUrl + "...");
+        mcpClient.initialize();
+        initToolCallbackProvider();
+        System.out.println("Connected to HTTP MCP Server.");
     }
 }
