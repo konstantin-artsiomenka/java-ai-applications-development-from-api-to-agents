@@ -1,7 +1,6 @@
 package t8.agent.task.tools.users;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import commons.exceptions.TaskNotImplementedException;
 import commons.user.service.UserServiceClient;
 import commons.user.service.UserUpdate;
 
@@ -17,33 +16,71 @@ public class UpdateUserTool extends BaseUserServiceTool {
 
     @Override
     public String getName() {
-        //TODO: Return tool name "update_user"
-        throw new TaskNotImplementedException();
+        return "update_user";
     }
 
     @Override
     public String getDescription() {
-        //TODO: Return a short description of what this tool does
-        throw new TaskNotImplementedException();
+        return "Updates an existing user's profile fields by their unique numeric ID.";
     }
 
     @Override
     public String getInputSchema() {
-        //TODO: Return JSON schema — required: id (number, user ID to update);
-        //   optional new_info object with updatable user fields (name, surname, email, phone,
-        //   date_of_birth, address, gender, company, salary, credit_card)
-        throw new TaskNotImplementedException();
+        return """
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "number",
+                      "description": "The unique numeric ID of the user to update."
+                    },
+                    "new_info": {
+                      "type": "object",
+                      "description": "Fields to update.",
+                      "properties": {
+                        "name":          { "type": "string" },
+                        "surname":       { "type": "string" },
+                        "email":         { "type": "string" },
+                        "phone":         { "type": "string" },
+                        "date_of_birth": { "type": "string" },
+                        "gender":        { "type": "string" },
+                        "company":       { "type": "string" },
+                        "salary":        { "type": "number" },
+                        "address": {
+                          "type": "object",
+                          "properties": {
+                            "country":    { "type": "string" },
+                            "city":       { "type": "string" },
+                            "street":     { "type": "string" },
+                            "flat_house": { "type": "string" }
+                          }
+                        },
+                        "credit_card": {
+                          "type": "object",
+                          "properties": {
+                            "num":      { "type": "string" },
+                            "cvv":      { "type": "string" },
+                            "exp_date": { "type": "string" }
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "required": ["id", "new_info"]
+                }
+                """;
     }
 
     @Override
     @SuppressWarnings("unchecked")
     public String execute(Map<String, Object> arguments) {
-        //TODO:
-        // - Extract `id` as int from arguments (cast via Number)
-        // - Extract `new_info` as Map from arguments
-        // - Convert `new_info` to `UserUpdate` via `objectMapper.convertValue(newInfo, UserUpdate.class)`
-        // - Call `userClient.updateUser(userId, user)` and return the result
-        // - Wrap in try-catch and return error string on exception
-        throw new TaskNotImplementedException();
+        try {
+            int userId = ((Number) arguments.get("id")).intValue();
+            Map<String, Object> newInfo = (Map<String, Object>) arguments.get("new_info");
+            UserUpdate user = objectMapper.convertValue(newInfo, UserUpdate.class);
+            return userClient.updateUser(userId, user);
+        } catch (Exception e) {
+            return "Error: " + e.getMessage();
+        }
     }
 }

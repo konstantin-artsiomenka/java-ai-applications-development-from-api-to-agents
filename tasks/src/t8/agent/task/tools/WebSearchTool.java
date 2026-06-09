@@ -2,7 +2,6 @@ package t8.agent.task.tools;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import commons.Constants;
-import commons.exceptions.TaskNotImplementedException;
 
 import java.io.IOException;
 import java.net.URI;
@@ -28,34 +27,72 @@ public class WebSearchTool extends BaseTool {
 
     @Override
     public String getName() {
-        //TODO: Return tool name "web_search_tool"
-        throw new TaskNotImplementedException();
+        return "web_search_tool";
     }
 
     @Override
     public String getDescription() {
-        //TODO: Return a short description of what this tool does
-        throw new TaskNotImplementedException();
+        return "Searches the web for up-to-date information based on a given query and returns a summary of the results.";
     }
 
     @Override
     public String getInputSchema() {
-        //TODO: Return JSON schema for this tool — accepts a "request" string parameter (required)
-        throw new TaskNotImplementedException();
+        return """
+                {
+                  "type": "object",
+                  "properties": {
+                    "request": {
+                      "type": "string",
+                      "description": "The search query to look up on the web."
+                    }
+                  },
+                  "required": ["request"]
+                }
+                """;
     }
 
     @Override
     @SuppressWarnings("unchecked")
     public String execute(Map<String, Object> arguments) {
         // https://developers.openai.com/api/docs/guides/tools-web-search
-        //TODO:
-        // https://developers.openai.com/api/docs/guides/tools-web-search
-        // - Build request payload: model "gpt-5.4", tools=[{"type":"web_search"}],
-        //   input from arguments.get("request")
-        // - POST to `endpoint` with Authorization header (`apiKey`) and Content-Type: application/json
-        // - On HTTP 200: traverse output → find item with type "message"
-        //   → find content block with type "output_text" → return its "text"
-        // - Return error string on non-200 or exception (e.g. "Error: " + statusCode + " " + body)
-        throw new TaskNotImplementedException();
+        try {
+            String request = (String) arguments.get("request");
+
+            Map<String, Object> payload = Map.of(
+                    "model", Constants.GPT_5_4,
+                    "tools", List.of(Map.of("type", "web_search_preview")),
+                    "input", request
+            );
+
+            String body = objectMapper.writeValueAsString(payload);
+
+            HttpRequest httpRequest = HttpRequest.newBuilder()
+                    .uri(URI.create(endpoint + "/responses"))
+                    .header("Authorization", apiKey)
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString(body))
+                    .build();
+
+            HttpResponse<String> response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString());
+
+            if (response.statusCode() == 200) {
+                var root = objectMapper.readTree(response.body());
+                var output = root.path("output");
+                for (var item : output) {
+                    if ("message".equals(item.path("type").asText())) {
+                        for (var contentBlock : item.path("content")) {
+                            if ("output_text".equals(contentBlock.path("type").asText())) {
+                                return contentBlock.path("text").asText();
+                            }
+                        }
+                    }
+                }
+                return "No text output found in response.";
+            } else {
+                return "Error: " + response.statusCode() + " " + response.body();
+            }
+        } catch (IOException | InterruptedException e) {
+            return "Error: " + e.getMessage();
+        }
     }
 }

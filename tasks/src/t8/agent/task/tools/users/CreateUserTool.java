@@ -1,7 +1,6 @@
 package t8.agent.task.tools.users;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import commons.exceptions.TaskNotImplementedException;
 import commons.user.service.UserCreate;
 import commons.user.service.UserServiceClient;
 
@@ -17,30 +16,59 @@ public class CreateUserTool extends BaseUserServiceTool {
 
     @Override
     public String getName() {
-        //TODO: Return tool name "add_user"
-        throw new TaskNotImplementedException();
+        return "add_user";
     }
 
     @Override
     public String getDescription() {
-        //TODO: Return a short description of what this tool does
-        throw new TaskNotImplementedException();
+        return "Creates a new user with the provided profile information.";
     }
 
     @Override
     public String getInputSchema() {
-        //TODO: Return JSON schema — required: name, surname, email, about_me;
-        //   optional: phone, date_of_birth, address (country/city/street/flat_house),
-        //   gender, company, salary, credit_card (num/cvv/exp_date)
-        throw new TaskNotImplementedException();
+        return """
+                {
+                  "type": "object",
+                  "properties": {
+                    "name":          { "type": "string",  "description": "First name." },
+                    "surname":       { "type": "string",  "description": "Last name." },
+                    "email":         { "type": "string",  "description": "Email address." },
+                    "about_me":      { "type": "string",  "description": "Short bio or description." },
+                    "phone":         { "type": "string",  "description": "Phone number." },
+                    "date_of_birth": { "type": "string",  "description": "Date of birth (YYYY-MM-DD)." },
+                    "gender":        { "type": "string",  "description": "Gender." },
+                    "company":       { "type": "string",  "description": "Company name." },
+                    "salary":        { "type": "number",  "description": "Annual salary." },
+                    "address": {
+                      "type": "object",
+                      "properties": {
+                        "country": { "type": "string" },
+                        "city":    { "type": "string" },
+                        "street":  { "type": "string" },
+                        "flat_house": { "type": "string" }
+                      }
+                    },
+                    "credit_card": {
+                      "type": "object",
+                      "properties": {
+                        "num":      { "type": "string" },
+                        "cvv":      { "type": "string" },
+                        "exp_date": { "type": "string" }
+                      }
+                    }
+                  },
+                  "required": ["name", "surname", "email", "about_me"]
+                }
+                """;
     }
 
     @Override
     public String execute(Map<String, Object> arguments) {
-        //TODO:
-        // - Convert `arguments` to `UserCreate` via `objectMapper.convertValue(arguments, UserCreate.class)`
-        // - Call `userClient.addUser(user)` and return the result
-        // - Wrap in try-catch and return error string on exception
-        throw new TaskNotImplementedException();
+        try {
+            UserCreate user = objectMapper.convertValue(arguments, UserCreate.class);
+            return userClient.addUser(user);
+        } catch (Exception e) {
+            return "Error: " + e.getMessage();
+        }
     }
 }

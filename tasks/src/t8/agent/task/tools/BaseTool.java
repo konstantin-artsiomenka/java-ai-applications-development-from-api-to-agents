@@ -2,7 +2,6 @@ package t8.agent.task.tools;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import commons.exceptions.TaskNotImplementedException;
 
 import java.util.Map;
 
@@ -19,20 +18,32 @@ public abstract class BaseTool {
     public abstract String getInputSchema();
 
     public String getOpenAiSchema() {
-        //TODO:
-        // https://developers.openai.com/api/docs/guides/function-calling#defining-functions
-        // - Build a "function" ObjectNode with getName(), getDescription(), and getInputSchema() as "parameters"
-        // - Wrap it in a root ObjectNode with "type": "function" and "function": <function node>
-        // - Return JSON string via MAPPER.writeValueAsString()
-        throw new TaskNotImplementedException();
+        try {
+            ObjectNode functionNode = MAPPER.createObjectNode();
+            functionNode.put("name", getName());
+            functionNode.put("description", getDescription());
+            functionNode.set("parameters", MAPPER.readTree(getInputSchema()));
+
+            ObjectNode rootNode = MAPPER.createObjectNode();
+            rootNode.put("type", "function");
+            rootNode.set("function", functionNode);
+
+            return MAPPER.writeValueAsString(rootNode);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to build OpenAI schema", e);
+        }
     }
 
     public String getAnthropicSchema() {
-        //TODO:
-        // https://platform.claude.com/docs/en/api/messages/create#create.tools
-        // - Build ObjectNode with getName() as "name", getDescription() as "description",
-        //   and getInputSchema() parsed as "input_schema"
-        // - Return JSON string via MAPPER.writeValueAsString()
-        throw new TaskNotImplementedException();
+        try {
+            ObjectNode toolNode = MAPPER.createObjectNode();
+            toolNode.put("name", getName());
+            toolNode.put("description", getDescription());
+            toolNode.set("input_schema", MAPPER.readTree(getInputSchema()));
+
+            return MAPPER.writeValueAsString(toolNode);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to build Anthropic schema", e);
+        }
     }
 }

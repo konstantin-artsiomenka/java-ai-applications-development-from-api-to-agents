@@ -1,6 +1,5 @@
 package t8.agent.task.tools.users;
 
-import commons.exceptions.TaskNotImplementedException;
 import commons.user.service.UserServiceClient;
 
 import java.util.Map;
@@ -13,28 +12,40 @@ public class SearchUsersTool extends BaseUserServiceTool {
 
     @Override
     public String getName() {
-        //TODO: Return tool name "search_users"
-        throw new TaskNotImplementedException();
+        return "search_users";
     }
 
     @Override
     public String getDescription() {
-        //TODO: Return a short description of what this tool does
-        throw new TaskNotImplementedException();
+        return "Searches for users by optional filters: name, surname, email, or gender. Returns all matching users.";
     }
 
     @Override
     public String getInputSchema() {
-        //TODO: Return JSON schema — optional string properties: name, surname, email, gender (none required)
-        throw new TaskNotImplementedException();
+        return """
+                {
+                  "type": "object",
+                  "properties": {
+                    "name":    { "type": "string", "description": "Filter by first name." },
+                    "surname": { "type": "string", "description": "Filter by last name." },
+                    "email":   { "type": "string", "description": "Filter by email address." },
+                    "gender":  { "type": "string", "description": "Filter by gender." }
+                  },
+                  "required": []
+                }
+                """;
     }
 
     @Override
     public String execute(Map<String, Object> arguments) {
-        //TODO:
-        // - Extract optional name, surname, email, gender strings from arguments (may be null)
-        // - Call `userClient.searchUsers(name, surname, email, gender)` and return the result
-        // - Wrap in try-catch and return error string on exception
-        throw new TaskNotImplementedException();
+        try {
+            String name    = (String) arguments.get("name");
+            String surname = (String) arguments.get("surname");
+            String email   = (String) arguments.get("email");
+            String gender  = (String) arguments.get("gender");
+            return userClient.searchUsers(name, surname, email, gender);
+        } catch (Exception e) {
+            return "Error: " + e.getMessage();
+        }
     }
 }

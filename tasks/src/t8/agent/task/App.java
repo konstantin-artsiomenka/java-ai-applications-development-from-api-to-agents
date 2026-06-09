@@ -7,7 +7,6 @@ import commons.model.Role;
 import commons.user.service.UserServiceClient;
 import t8.agent.task.agents.AnthropicBasedAgent;
 import t8.agent.task.agents.BaseAgent;
-import t8.agent.task.agents.OpenAIBasedAgent;
 import t8.agent.task.tools.BaseTool;
 import t8.agent.task.tools.WebSearchTool;
 import t8.agent.task.tools.users.*;
@@ -19,22 +18,55 @@ import java.util.Scanner;
 public class App {
 
     public static void main(String[] args) {
-        //TODO:
-        // - Create `UserServiceClient`
-        // - Create list of all tools:
-        //      - WebSearchTool (needs OPENAI_API_KEY),
-        //      - GetUserByIdTool,
-        //      - SearchUsersTool,
-        //      - CreateUserTool,
-        //      - UpdateUserTool,
-        //      - DeleteUserTool
-        // - Create OpenAIBasedAgent (or AnthropicBasedAgent) with all tools and Prompts.SYSTEM_PROMPT
-        // - Create Conversation
-        // - Print welcome message and run a Scanner loop until user types "exit":
-        //   - Read user input, add Message(Role.USER, input) to conversation
-        //   - Take a mutable copy of conversation messages; record its size before the call
-        //   - Call agent.getResponse(messages, true) to get the AI reply
-        //   - Sync any intermediate tool-call/tool-result messages back into conversation
-        //   - Add the AI reply to conversation and print it
+        UserServiceClient userServiceClient = new UserServiceClient();
+
+        List<BaseTool> tools = List.of(
+                new WebSearchTool(Constants.OPENAI_API_KEY),
+                new GetUserByIdTool(userServiceClient),
+                new SearchUsersTool(userServiceClient),
+                new CreateUserTool(userServiceClient),
+                new UpdateUserTool(userServiceClient),
+                new DeleteUserTool(userServiceClient)
+        );
+
+        BaseAgent agent = new AnthropicBasedAgent(
+                Constants.CLAUDE_SONNET_4_6,
+                Constants.ANTHROPIC_API_KEY,
+                tools,
+                Prompts.SYSTEM_PROMPT
+        );
+
+        Conversation conversation = new Conversation();
+
+        System.out.println("User Management Agent is ready. Type 'exit' to quit.");
+        System.out.println("─".repeat(60));
+
+        try (Scanner scanner = new Scanner(System.in)) {
+            while (true) {
+                System.out.print("You: ");
+                String input = scanner.nextLine();
+
+                if ("exit".equalsIgnoreCase(input.trim())) {
+                    break;
+                }
+
+                conversation.addMessage(new Message(Role.USER, input));
+
+                // Mutable copy so getResponse can append intermediate tool messages
+                List<Message> messages = new ArrayList<>(conversation.getMessages());
+                int sizeBeforeCall = messages.size();
+
+                Message reply = agent.getResponse(messages, true);
+
+                // Sync back any intermediate tool-call / tool-result messages
+                for (int i = sizeBeforeCall; i < messages.size(); i++) {
+                    conversation.addMessage(messages.get(i));
+                }
+
+                conversation.addMessage(reply);
+                System.out.println("Assistant: " + reply.content());
+                System.out.println();
+            }
+        }
     }
 }

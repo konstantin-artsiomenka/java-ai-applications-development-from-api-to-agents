@@ -1,6 +1,5 @@
 package t8.agent.task.tools.users;
 
-import commons.exceptions.TaskNotImplementedException;
 import commons.user.service.UserServiceClient;
 
 import java.util.Map;
@@ -13,28 +12,37 @@ public class GetUserByIdTool extends BaseUserServiceTool {
 
     @Override
     public String getName() {
-        //TODO: Return tool name "get_user_by_id"
-        throw new TaskNotImplementedException();
+        return "get_user_by_id";
     }
 
     @Override
     public String getDescription() {
-        //TODO: Return a short description of what this tool does
-        throw new TaskNotImplementedException();
+        return "Retrieves a user's full profile by their unique numeric ID.";
     }
 
     @Override
     public String getInputSchema() {
-        //TODO: Return JSON schema — accepts user `id` (number) as a required parameter
-        throw new TaskNotImplementedException();
+        return """
+                {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "number",
+                      "description": "The unique numeric ID of the user to retrieve."
+                    }
+                  },
+                  "required": ["id"]
+                }
+                """;
     }
 
     @Override
     public String execute(Map<String, Object> arguments) {
-        //TODO:
-        // - Extract `id` as int from arguments (cast via Number)
-        // - Call `userClient.getUser(id)` and return the result
-        // - Wrap in try-catch and return error string on exception
-        throw new TaskNotImplementedException();
+        try {
+            int id = ((Number) arguments.get("id")).intValue();
+            return userClient.getUser(id);
+        } catch (Exception e) {
+            return "Error: " + e.getMessage();
+        }
     }
 }
